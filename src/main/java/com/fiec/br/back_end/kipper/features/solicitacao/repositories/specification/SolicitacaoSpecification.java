@@ -17,6 +17,10 @@ public class SolicitacaoSpecification {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            if (filtro.id() != null) {
+                predicates.add(cb.equal(root.get("id"), filtro.id()));
+            }
+
             if (filtro.termo() != null && !filtro.termo().isBlank()) {
                 String termoBusca = "%" + filtro.termo().toLowerCase() + "%";
                 predicates.add(cb.or(
@@ -33,6 +37,14 @@ public class SolicitacaoSpecification {
                 predicates.add(cb.equal(root.get("prioridade"), filtro.prioridade()));
             }
 
+            if (filtro.numeroPatrimonio() != null && !filtro.numeroPatrimonio().isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("numeroPatrimonio")), "%" + filtro.numeroPatrimonio().toLowerCase() + "%"));
+            }
+
+            if (filtro.localizacaoProblema() != null && !filtro.localizacaoProblema().isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("localizacaoProblema")), "%" + filtro.localizacaoProblema().toLowerCase() + "%"));
+            }
+
             if (filtro.usuarioSolicitanteId() != null) {
                 predicates.add(cb.equal(root.get("usuarioSolicitante").get("id"), filtro.usuarioSolicitanteId()));
             }
@@ -41,12 +53,20 @@ public class SolicitacaoSpecification {
                 predicates.add(cb.equal(root.get("tecnicoResponsavel").get("id"), filtro.tecnicoResponsavelId()));
             }
 
-            if (filtro.dataInicio() != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.<LocalDateTime>get("createdAt"), filtro.dataInicio()));
+            if (filtro.dataAberturaInicio() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.<LocalDateTime>get("createdAt"), filtro.dataAberturaInicio()));
             }
 
-            if (filtro.dataFim() != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.<LocalDateTime>get("createdAt"), filtro.dataFim()));
+            if (filtro.dataAberturaFim() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.<LocalDateTime>get("createdAt"), filtro.dataAberturaFim()));
+            }
+
+            if (filtro.dataFinalizacaoInicio() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.<LocalDateTime>get("dataFinalizacao"), filtro.dataFinalizacaoInicio()));
+            }
+
+            if (filtro.dataFinalizacaoFim() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.<LocalDateTime>get("dataFinalizacao"), filtro.dataFinalizacaoFim()));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

@@ -7,11 +7,16 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record SolicitacaoSearchFilterDTO(
+        UUID id,
         String termo,
         StatusSolicitacao status,
         PrioridadeSolicitacao prioridade,
+        String numeroPatrimonio,
+        String localizacaoProblema,
         UUID usuarioSolicitanteId,
         UUID tecnicoResponsavelId,
-        LocalDateTime dataInicio,
-        LocalDateTime dataFim
+        LocalDateTime dataAberturaInicio,
+        LocalDateTime dataAberturaFim,
+        LocalDateTime dataFinalizacaoInicio,
+        LocalDateTime dataFinalizacaoFim
 ) {}

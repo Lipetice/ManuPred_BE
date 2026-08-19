@@ -2,6 +2,7 @@ package com.fiec.br.back_end.kipper.features.solicitacao.model.entities;
 
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.PrioridadeSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolicitacao;
+import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.TipoSolicitacao;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import jakarta.persistence.*;
 import lombok.*;
@@ -39,6 +40,16 @@ public class Solicitacao {
     @Column(nullable = false, length = 10)
     private PrioridadeSolicitacao prioridade;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TipoSolicitacao tipo;
+
+    @Column(name = "numero_patrimonio", length = 50)
+    private String numeroPatrimonio;
+
+    @Column(name = "localizacao_problema", nullable = false, length = 150)
+    private String localizacaoProblema;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usuario_solicitante_id", nullable = false)
     private Users usuarioSolicitante;
@@ -54,4 +65,7 @@ public class Solicitacao {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "data_finalizacao")
+    private LocalDateTime dataFinalizacao;
 }
