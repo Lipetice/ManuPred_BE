@@ -4,8 +4,8 @@ import com.fiec.br.back_end.kipper.features.user.model.dto.CreateUserRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.TokenRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.UserMeDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.UserResponseDTO;
+import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.service.UserService;
-import com.google.firebase.remoteconfig.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -55,7 +55,7 @@ public class UserController {
 
     @GetMapping("/me")
     public ResponseEntity<UserMeDTO> getMe() {
-        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Users user = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         return ResponseEntity.ok(new UserMeDTO(user.getEmail(), user.getName()));
     }
 }

@@ -36,7 +36,7 @@ public class AuthServiceImpl implements AuthService {
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setFcmToken(request.fcmToken());
 
-        userRepository.save(Users.builder().build());
+        userRepository.save(user);
     }
 
     @Override
