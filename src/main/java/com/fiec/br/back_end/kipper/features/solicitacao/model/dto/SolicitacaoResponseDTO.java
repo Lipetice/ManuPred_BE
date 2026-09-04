@@ -23,6 +23,7 @@ public record SolicitacaoResponseDTO(
         UUID tecnicoResponsavelId,
         String tecnicoResponsavelNome,
         LocalDateTime dataAbertura,
+        LocalDateTime dataAtualizacao,
         LocalDateTime dataFinalizacao,
         List<AnexoResponseDTO> anexos
 ) {
@@ -45,6 +46,7 @@ public record SolicitacaoResponseDTO(
                 s.getTecnicoResponsavel() != null ? s.getTecnicoResponsavel().getId() : null,
                 s.getTecnicoResponsavel() != null ? s.getTecnicoResponsavel().getName() : null,
                 s.getCreatedAt(),
+                s.getUpdatedAt(),
                 s.getDataFinalizacao(),
                 anexos
         );

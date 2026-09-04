@@ -4,10 +4,9 @@ import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.PrioridadeSo
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.TipoSolicitacao;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
+import com.fiec.br.back_end.kipper.model.entities.Auditoria;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -19,8 +18,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EqualsAndHashCode(of = "id")
-public class Solicitacao {
+@EqualsAndHashCode(of = "id", callSuper = false)
+public class Solicitacao extends Auditoria {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -57,14 +56,6 @@ public class Solicitacao {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tecnico_responsavel_id")
     private Users tecnicoResponsavel;
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
 
     @Column(name = "data_finalizacao")
     private LocalDateTime dataFinalizacao;
