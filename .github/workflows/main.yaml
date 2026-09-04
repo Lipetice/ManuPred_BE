@@ -47,7 +47,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build da Imagem Docker
-        run: docker build -t manupred_be .
+        run: docker build -t fiecpa2026 .
 
       - name: Tag e Push da Imagem
         run: |
@@ -65,11 +65,11 @@ jobs:
 
       - name: Parar container antigo
         continue-on-error: true
-        run: docker stop java-app
+        run: docker stop manupred-be-app
 
       - name: Remover container antigo
         continue-on-error: true
-        run: docker rm java-app
+        run: docker rm manupred-be-app
 
       - name: Rodar novo container
-        run: docker run -d --pull always --name java-app -p 8080:8080 ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest
+        run: docker run -d --pull always --name manupred-be-app -p 8080:8080 ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest
