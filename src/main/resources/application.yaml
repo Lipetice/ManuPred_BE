@@ -2,9 +2,9 @@ spring:
   application:
     name: kipper
   datasource:
-    url: jdbc:mysql://localhost:${DB_PORT:3310}/kipper_db?createDatabaseIfNotExist=true
-    username: root
-    password: 1234
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3310}/kipper_db?createDatabaseIfNotExist=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
