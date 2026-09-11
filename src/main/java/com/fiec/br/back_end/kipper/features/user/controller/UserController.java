@@ -1,5 +1,6 @@
 package com.fiec.br.back_end.kipper.features.user.controller;
 
+import com.fiec.br.back_end.kipper.features.auth.models.dto.TokenResponseDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.CreateUserRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.TokenRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.UserMeDTO;
@@ -30,8 +31,8 @@ public class UserController {
     }
 
     @PostMapping("/auth/firebase")
-    public ResponseEntity<UserResponseDTO> authenticateWithFirebase(@RequestBody @Valid TokenRequestDTO dto) {
-        UserResponseDTO response = userService.verifyAndAuthenticateFirebaseToken(dto.token());
+    public ResponseEntity<TokenResponseDTO> authenticateWithFirebase(@RequestBody @Valid TokenRequestDTO dto) {
+        TokenResponseDTO response = userService.verifyAndAuthenticateFirebaseToken(dto.token());
         return ResponseEntity.ok(response);
     }
 

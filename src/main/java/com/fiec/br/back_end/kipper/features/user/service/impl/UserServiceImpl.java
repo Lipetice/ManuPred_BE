@@ -2,6 +2,8 @@ package com.fiec.br.back_end.kipper.features.user.service.impl;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseToken;
+import com.fiec.br.back_end.kipper.config.JwtUtil;
+import com.fiec.br.back_end.kipper.features.auth.models.dto.TokenResponseDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.CreateUserRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.UserResponseDTO;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
@@ -23,6 +25,7 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
     // --- Implementação do UserDetailsService para o Spring Security ---
     @Override
@@ -85,7 +88,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserResponseDTO verifyAndAuthenticateFirebaseToken(String firebaseToken) {
+    public TokenResponseDTO verifyAndAuthenticateFirebaseToken(String firebaseToken) {
         try {
             FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(firebaseToken);
             String uid = decodedToken.getUid();
@@ -105,7 +108,8 @@ public class UserServiceImpl implements UserService {
                                     .firebaseUid(uid)
                                     .build())));
 
-            return UserResponseDTO.fromEntity(user);
+            String jwtToken = jwtUtil.generateToken(user);
+            return new TokenResponseDTO(jwtToken);
         } catch (Exception e) {
             throw new RuntimeException("Falha na verificação do token Firebase: " + e.getMessage(), e);
         }
