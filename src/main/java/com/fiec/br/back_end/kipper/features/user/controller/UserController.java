@@ -1,10 +1,7 @@
 package com.fiec.br.back_end.kipper.features.user.controller;
 
 import com.fiec.br.back_end.kipper.features.auth.models.dto.TokenResponseDTO;
-import com.fiec.br.back_end.kipper.features.user.model.dto.CreateUserRequestDTO;
-import com.fiec.br.back_end.kipper.features.user.model.dto.TokenRequestDTO;
-import com.fiec.br.back_end.kipper.features.user.model.dto.UserMeDTO;
-import com.fiec.br.back_end.kipper.features.user.model.dto.UserResponseDTO;
+import com.fiec.br.back_end.kipper.features.user.model.dto.*;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.service.UserService;
 import jakarta.validation.Valid;
@@ -27,28 +24,24 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<UserResponseDTO> createUser(@RequestBody @Valid CreateUserRequestDTO dto) {
-        UserResponseDTO response = userService.createUser(dto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(dto));
     }
 
     @PostMapping("/auth/firebase")
     public ResponseEntity<TokenResponseDTO> authenticateWithFirebase(@RequestBody @Valid TokenRequestDTO dto) {
-        TokenResponseDTO response = userService.verifyAndAuthenticateFirebaseToken(dto.token());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(userService.verifyAndAuthenticateFirebaseToken(dto.token()));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{id}")
     public ResponseEntity<UserResponseDTO> findById(@PathVariable UUID id) {
-        UserResponseDTO response = userService.findById(id);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(userService.findById(id));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public ResponseEntity<List<UserResponseDTO>> findAll() {
-        List<UserResponseDTO> response = userService.findAll();
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(userService.findAll());
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -56,6 +49,14 @@ public class UserController {
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{id}/role")
+    public ResponseEntity<UserResponseDTO> atualizarRole(
+            @PathVariable UUID id,
+            @RequestBody @Valid RoleUpdateDTO dto) {
+        return ResponseEntity.ok(userService.atualizarRole(id, dto.role()));
     }
 
     @GetMapping("/me")

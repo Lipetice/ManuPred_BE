@@ -1,8 +1,6 @@
 package com.fiec.br.back_end.kipper.features.solicitacao.controller;
 
-import com.fiec.br.back_end.kipper.features.solicitacao.model.dto.CreateSolicitacaoRequestDTO;
-import com.fiec.br.back_end.kipper.features.solicitacao.model.dto.SolicitacaoResponseDTO;
-import com.fiec.br.back_end.kipper.features.solicitacao.model.dto.SolicitacaoSearchFilterDTO;
+import com.fiec.br.back_end.kipper.features.solicitacao.model.dto.*;
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.PrioridadeSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.service.SolicitacaoService;
@@ -34,14 +32,31 @@ public class SolicitacaoController {
 
     private final SolicitacaoService solicitacaoService;
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    private Users getUsuarioLogado() {
+        return (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    private boolean isAdmin(Users u) { return u.getRole() == UserRole.ADMIN_ROLE; }
+    private boolean isSupervisor(Users u) {
+        return u.getRole() == UserRole.ADMIN_ROLE || u.getRole() == UserRole.SUPERVISOR_ROLE;
+    }
+    private boolean isFuncionario(Users u) {
+        return u.getRole() == UserRole.ADMIN_ROLE || u.getRole() == UserRole.SUPERVISOR_ROLE
+                || u.getRole() == UserRole.FUNCIONARIO_ROLE;
+    }
+
+    @PostMapping
     public ResponseEntity<SolicitacaoResponseDTO> create(
-            @RequestPart("dados") @Valid CreateSolicitacaoRequestDTO dto,
-            @RequestPart(value = "anexos", required = false) List<MultipartFile> anexos
-    ) {
-        Users usuarioLogado = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        SolicitacaoResponseDTO response = solicitacaoService.create(dto, usuarioLogado.getId(), anexos);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            @RequestParam("dados") String dadosJson,
+            @RequestParam(value = "anexos", required = false) List<MultipartFile> anexos
+    ) throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        CreateSolicitacaoRequestDTO dto = mapper.readValue(dadosJson, CreateSolicitacaoRequestDTO.class);
+
+        Users u = getUsuarioLogado();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(solicitacaoService.create(dto, u.getId(), anexos));
     }
 
     @GetMapping("/search")
@@ -60,62 +75,134 @@ public class SolicitacaoController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFinalizacaoFim,
             @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
     ) {
-        Users usuarioLogado = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-
-        // Provisório: só existe ADMIN_ROLE e USER_ROLE hoje.
-        // Quando criarem funcionário/supervisor, incluir eles aqui também.
-        UUID solicitanteFiltro = usuarioLogado.getRole() == UserRole.ADMIN_ROLE
-                ? usuarioSolicitanteId
-                : usuarioLogado.getId();
-
+        Users u = getUsuarioLogado();
+        UUID solicitanteFiltro = isFuncionario(u) ? usuarioSolicitanteId : u.getId();
         SolicitacaoSearchFilterDTO filtro = new SolicitacaoSearchFilterDTO(
                 id, termo, status, prioridade, numeroPatrimonio, localizacaoProblema,
                 solicitanteFiltro, tecnicoResponsavelId,
-                dataAberturaInicio, dataAberturaFim, dataFinalizacaoInicio, dataFinalizacaoFim
-        );
+                dataAberturaInicio, dataAberturaFim, dataFinalizacaoInicio, dataFinalizacaoFim);
         return ResponseEntity.ok(solicitacaoService.search(filtro, pageable));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<SolicitacaoResponseDTO> buscarPorId(@PathVariable UUID id) {
-        Users usuarioLogado = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        SolicitacaoResponseDTO response = solicitacaoService.buscarPorId(id);
+        Users u = getUsuarioLogado();
+        SolicitacaoResponseDTO r = solicitacaoService.buscarPorId(id);
 
-        boolean ehAdmin = usuarioLogado.getRole() == UserRole.ADMIN_ROLE;
-        boolean ehDoProprioUsuario = usuarioLogado.getId().equals(response.usuarioSolicitanteId());
+        boolean ehAdmin = isAdmin(u);
+        boolean ehFuncionario = isFuncionario(u);
+        boolean ehDono = u.getId().equals(r.usuarioSolicitanteId());
+        boolean ehTecnico = u.getId().equals(r.tecnicoResponsavelId());
+        boolean ehAjudante = r.ajudantes() != null && r.ajudantes().stream().anyMatch(a -> a.id().equals(u.getId()));
 
-        if (!ehAdmin && !ehDoProprioUsuario) {
-            throw new AccessDeniedException("Você não tem permissão para ver este chamado.");
+        if (!ehAdmin && !ehFuncionario && !ehDono && !ehTecnico && !ehAjudante) {
+            throw new AccessDeniedException("Sem permissão para ver este chamado.");
         }
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(r);
     }
 
-    // Restrito a ADMIN por ora; se o time criar um papel específico de técnico,
-    // trocar para hasAnyRole('ADMIN', 'TECNICO').
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @PatchMapping("/{id}/status")
     public ResponseEntity<SolicitacaoResponseDTO> atualizarStatus(
             @PathVariable UUID id,
-            @RequestParam StatusSolicitacao status
-    ) {
-        return ResponseEntity.ok(solicitacaoService.atualizarStatus(id, status));
+            @RequestParam StatusSolicitacao status,
+            @RequestParam(required = false) String motivo) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.atualizarStatus(id, status, motivo, u.getId()));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
     @PatchMapping("/{id}/prioridade")
     public ResponseEntity<SolicitacaoResponseDTO> atualizarPrioridade(
             @PathVariable UUID id,
-            @RequestParam PrioridadeSolicitacao prioridade
-    ) {
-        return ResponseEntity.ok(solicitacaoService.atualizarPrioridade(id, prioridade));
+            @RequestParam PrioridadeSolicitacao prioridade) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.atualizarPrioridade(id, prioridade, u.getId()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PatchMapping("/{id}/tecnico")
+    public ResponseEntity<SolicitacaoResponseDTO> atribuirTecnico(
+            @PathVariable UUID id, @RequestParam UUID tecnicoId) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.atribuirTecnico(id, tecnicoId, u.getId()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PatchMapping("/{id}/urgente")
+    public ResponseEntity<SolicitacaoResponseDTO> marcarUrgente(
+            @PathVariable UUID id, @RequestParam boolean urgente) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.marcarUrgente(id, urgente, u.getId()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
+    @PostMapping("/{id}/ajudantes/{ajudanteId}")
+    public ResponseEntity<SolicitacaoResponseDTO> adicionarAjudante(
+            @PathVariable UUID id, @PathVariable UUID ajudanteId) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.adicionarAjudante(id, ajudanteId, u.getId()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
+    @DeleteMapping("/{id}/ajudantes/{ajudanteId}")
+    public ResponseEntity<SolicitacaoResponseDTO> removerAjudante(
+            @PathVariable UUID id, @PathVariable UUID ajudanteId) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.removerAjudante(id, ajudanteId, u.getId()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
+    @PatchMapping("/{id}/concluir")
+    public ResponseEntity<SolicitacaoResponseDTO> concluir(@PathVariable UUID id) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.ok(solicitacaoService.concluir(id, u.getId()));
+    }
+
+    @PatchMapping("/{id}/validar")
+    public ResponseEntity<SolicitacaoResponseDTO> validar(@PathVariable UUID id) {
+        Users u = getUsuarioLogado();
+        SolicitacaoResponseDTO r = solicitacaoService.buscarPorId(id);
+        if (!isAdmin(u) && !u.getId().equals(r.usuarioSolicitanteId())) {
+            throw new AccessDeniedException("Só o solicitante pode validar.");
+        }
+        return ResponseEntity.ok(solicitacaoService.validarFinalizacao(id, u.getId()));
+    }
+
+    @PatchMapping("/{id}/rejeitar")
+    public ResponseEntity<SolicitacaoResponseDTO> rejeitar(
+            @PathVariable UUID id, @RequestParam String motivo) {
+        Users u = getUsuarioLogado();
+        SolicitacaoResponseDTO r = solicitacaoService.buscarPorId(id);
+        if (!isAdmin(u) && !isSupervisor(u) && !u.getId().equals(r.usuarioSolicitanteId())) {
+            throw new AccessDeniedException("Sem permissão para rejeitar.");
+        }
+        return ResponseEntity.ok(solicitacaoService.rejeitar(id, motivo, u.getId()));
+    }
+
+    @GetMapping("/{id}/comentarios")
+    public ResponseEntity<List<ComentarioResponseDTO>> listarComentarios(@PathVariable UUID id) {
+        return ResponseEntity.ok(solicitacaoService.listarComentarios(id));
+    }
+
+    @PostMapping("/{id}/comentarios")
+    public ResponseEntity<ComentarioResponseDTO> comentar(
+            @PathVariable UUID id, @RequestBody @Valid ComentarioRequestDTO dto) {
+        Users u = getUsuarioLogado();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(solicitacaoService.adicionarComentario(id, dto.texto(), u.getId()));
+    }
+
+    @GetMapping("/{id}/historico")
+    public ResponseEntity<List<MovimentacaoResponseDTO>> historico(@PathVariable UUID id) {
+        return ResponseEntity.ok(solicitacaoService.listarMovimentacoes(id));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
-    @PatchMapping("/{id}/tecnico")
-    public ResponseEntity<SolicitacaoResponseDTO> atribuirTecnico(
-            @PathVariable UUID id,
-            @RequestParam UUID tecnicoId
-    ) {
-        return ResponseEntity.ok(solicitacaoService.atribuirTecnico(id, tecnicoId));
+    @GetMapping("/relatorios")
+    public ResponseEntity<RelatorioDTO> relatorio(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime inicio,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fim) {
+        return ResponseEntity.ok(solicitacaoService.gerarRelatorio(inicio, fim));
     }
 }
