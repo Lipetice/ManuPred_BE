@@ -14,7 +14,7 @@ public class NotificacaoService {
     public void enviar(Users destinatario, String titulo, String corpo) {
         if (destinatario == null || destinatario.getFcmToken() == null
                 || destinatario.getFcmToken().isBlank()) {
-            log.debug("Usuário sem fcmToken, pulando notificação");
+            log.info("Usuário sem fcmToken, pulando notificação");
             return;
         }
 
