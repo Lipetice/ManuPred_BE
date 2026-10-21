@@ -1,17 +1,20 @@
 package com.fiec.br.back_end.kipper.features.user.service.impl;
 
-import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseToken;
+import com.fiec.br.back_end.kipper.exception.RecursoNaoEncontradoException;
 import com.fiec.br.back_end.kipper.config.JwtUtil;
 import com.fiec.br.back_end.kipper.features.auth.models.dto.TokenResponseDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.CreateUserRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.UserResponseDTO;
+import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import com.fiec.br.back_end.kipper.features.user.service.UserService;
-import com.fiec.br.back_end.kipper.exception.RecursoNaoEncontradoException;
+import com.fiec.br.back_end.kipper.model.service.AuditService;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseToken;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,6 +31,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final AuditService auditService;
 
     @Override
     @Transactional(readOnly = true)
@@ -98,11 +102,10 @@ public class UserServiceImpl implements UserService {
                                     .build())));
             return new TokenResponseDTO(jwtUtil.generateToken(user));
         } catch (Exception e) {
-            throw new RuntimeException("Falha na verificação do token Firebase: " + e.getMessage(), e);
+            throw new BadCredentialsException("Falha na verificação do token Firebase: " + e.getMessage());
         }
     }
 
-    private final com.fiec.br.back_end.kipper.model.service.AuditService auditService;
     @Override
     @Transactional
     public UserResponseDTO atualizarRole(UUID id, UserRole role) {
@@ -112,13 +115,30 @@ public class UserServiceImpl implements UserService {
         user.setRole(role);
         Users salvo = userRepository.save(user);
 
-        // Registra na auditoria
-        Users autor = (Users) org.springframework.security.core.context.SecurityContextHolder
-                .getContext().getAuthentication().getPrincipal();
+        Users autor = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         auditService.registrar("ALTERAR_ROLE",
                 "Alterou role de " + salvo.getName() + ": " + antiga + " → " + role,
                 autor);
 
         return UserResponseDTO.fromEntity(salvo);
+    }
+
+    @Override
+    @Transactional
+    public void atualizarFcmToken(String email, String fcmToken) {
+        // Remove o token de qualquer outro usuário (para o celular não receber notificação de outra conta)
+        List<Users> usuariosComToken = userRepository.findAllByFcmToken(fcmToken);
+        for (Users u : usuariosComToken) {
+            if (!u.getEmail().equals(email)) {
+                u.setFcmToken(null);
+                userRepository.save(u);
+            }
+        }
+
+        // Atualiza o token no usuário logado
+        Users user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado."));
+        user.setFcmToken(fcmToken);
+        userRepository.save(user);
     }
 }

@@ -6,6 +6,9 @@ import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolici
 import com.fiec.br.back_end.kipper.features.solicitacao.service.SolicitacaoService;
 import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -28,6 +31,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/solicitacoes")
 @RequiredArgsConstructor
+@Tag(name = "Solicitações", description = "Gerenciamento de chamados de manutenção")
 public class SolicitacaoController {
 
     private final SolicitacaoService solicitacaoService;
@@ -45,20 +49,33 @@ public class SolicitacaoController {
                 || u.getRole() == UserRole.FUNCIONARIO_ROLE;
     }
 
-    @PostMapping
+    @Operation(summary = "Criar chamado", description = "Cria um novo chamado. Preencha os campos de texto e, se quiser, anexe imagens.")
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<SolicitacaoResponseDTO> create(
-            @RequestParam("dados") String dadosJson,
+            @RequestParam("tipoId") String tipoId,
+            @RequestParam(value = "localId", required = false) String localId,
+            @RequestParam("localizacaoProblema") String localizacaoProblema,
+            @RequestParam("descricao") String descricao,
+            @RequestParam(value = "numeroPatrimonio", required = false) String numeroPatrimonio,
             @RequestParam(value = "anexos", required = false) List<MultipartFile> anexos
-    ) throws Exception {
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
-        CreateSolicitacaoRequestDTO dto = mapper.readValue(dadosJson, CreateSolicitacaoRequestDTO.class);
-
-        Users u = getUsuarioLogado();
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(solicitacaoService.create(dto, u.getId(), anexos));
+    ) {
+        try {
+            CreateSolicitacaoRequestDTO dto = new CreateSolicitacaoRequestDTO(
+                    tipoId != null && !tipoId.isBlank() ? UUID.fromString(tipoId) : null,
+                    localId != null && !localId.isBlank() ? UUID.fromString(localId) : null,
+                    localizacaoProblema,
+                    descricao,
+                    numeroPatrimonio
+            );
+            Users u = getUsuarioLogado();
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(solicitacaoService.create(dto, u.getId(), anexos));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Erro nos dados enviados: verifique se tipoId e localId são UUIDs válidos. Detalhe: " + e.getMessage());
+        }
     }
 
+    @Operation(summary = "Buscar chamados", description = "Busca paginada com filtros. Funcionários e supervisores veem tudo; usuários comuns veem só os próprios.")
     @GetMapping("/search")
     public ResponseEntity<Page<SolicitacaoResponseDTO>> search(
             @RequestParam(required = false) UUID id,
@@ -84,6 +101,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.search(filtro, pageable));
     }
 
+    @Operation(summary = "Buscar por ID")
     @GetMapping("/{id}")
     public ResponseEntity<SolicitacaoResponseDTO> buscarPorId(@PathVariable UUID id) {
         Users u = getUsuarioLogado();
@@ -101,6 +119,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(r);
     }
 
+    @Operation(summary = "Atualizar status")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @PatchMapping("/{id}/status")
     public ResponseEntity<SolicitacaoResponseDTO> atualizarStatus(
@@ -111,6 +130,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.atualizarStatus(id, status, motivo, u.getId()));
     }
 
+    @Operation(summary = "Atualizar prioridade")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
     @PatchMapping("/{id}/prioridade")
     public ResponseEntity<SolicitacaoResponseDTO> atualizarPrioridade(
@@ -120,6 +140,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.atualizarPrioridade(id, prioridade, u.getId()));
     }
 
+    @Operation(summary = "Atribuir técnico")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
     @PatchMapping("/{id}/tecnico")
     public ResponseEntity<SolicitacaoResponseDTO> atribuirTecnico(
@@ -128,6 +149,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.atribuirTecnico(id, tecnicoId, u.getId()));
     }
 
+    @Operation(summary = "Marcar urgência")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
     @PatchMapping("/{id}/urgente")
     public ResponseEntity<SolicitacaoResponseDTO> marcarUrgente(
@@ -136,6 +158,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.marcarUrgente(id, urgente, u.getId()));
     }
 
+    @Operation(summary = "Adicionar ajudante")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @PostMapping("/{id}/ajudantes/{ajudanteId}")
     public ResponseEntity<SolicitacaoResponseDTO> adicionarAjudante(
@@ -144,6 +167,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.adicionarAjudante(id, ajudanteId, u.getId()));
     }
 
+    @Operation(summary = "Remover ajudante")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @DeleteMapping("/{id}/ajudantes/{ajudanteId}")
     public ResponseEntity<SolicitacaoResponseDTO> removerAjudante(
@@ -152,6 +176,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.removerAjudante(id, ajudanteId, u.getId()));
     }
 
+    @Operation(summary = "Concluir chamado")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @PatchMapping("/{id}/concluir")
     public ResponseEntity<SolicitacaoResponseDTO> concluir(@PathVariable UUID id) {
@@ -159,6 +184,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.concluir(id, u.getId()));
     }
 
+    @Operation(summary = "Validar finalização")
     @PatchMapping("/{id}/validar")
     public ResponseEntity<SolicitacaoResponseDTO> validar(@PathVariable UUID id) {
         Users u = getUsuarioLogado();
@@ -169,6 +195,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.validarFinalizacao(id, u.getId()));
     }
 
+    @Operation(summary = "Rejeitar chamado")
     @PatchMapping("/{id}/rejeitar")
     public ResponseEntity<SolicitacaoResponseDTO> rejeitar(
             @PathVariable UUID id, @RequestParam String motivo) {
@@ -180,11 +207,13 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.rejeitar(id, motivo, u.getId()));
     }
 
+    @Operation(summary = "Listar comentários")
     @GetMapping("/{id}/comentarios")
     public ResponseEntity<List<ComentarioResponseDTO>> listarComentarios(@PathVariable UUID id) {
         return ResponseEntity.ok(solicitacaoService.listarComentarios(id));
     }
 
+    @Operation(summary = "Adicionar comentário")
     @PostMapping("/{id}/comentarios")
     public ResponseEntity<ComentarioResponseDTO> comentar(
             @PathVariable UUID id, @RequestBody @Valid ComentarioRequestDTO dto) {
@@ -193,11 +222,13 @@ public class SolicitacaoController {
                 .body(solicitacaoService.adicionarComentario(id, dto.texto(), u.getId()));
     }
 
+    @Operation(summary = "Listar histórico/movimentações")
     @GetMapping("/{id}/historico")
     public ResponseEntity<List<MovimentacaoResponseDTO>> historico(@PathVariable UUID id) {
         return ResponseEntity.ok(solicitacaoService.listarMovimentacoes(id));
     }
 
+    @Operation(summary = "Gerar relatórios", description = "Apenas ADMIN. Se início/fim forem omitidos, calcula sobre tudo.")
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/relatorios")
     public ResponseEntity<RelatorioDTO> relatorio(

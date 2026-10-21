@@ -17,4 +17,5 @@ public interface UserService extends UserDetailsService {
     void deleteUser(UUID id);
     TokenResponseDTO verifyAndAuthenticateFirebaseToken(String firebaseToken);
     UserResponseDTO atualizarRole(UUID id, UserRole role);
+    void atualizarFcmToken(String email, String fcmToken);
 }

@@ -15,8 +15,9 @@ public interface SolicitacaoRepository extends JpaRepository<Solicitacao, UUID>,
 
     long countByStatus(StatusSolicitacao status);
 
-    @Query("SELECT s FROM Solicitacao s WHERE s.status NOT IN ('FINALIZADA','REJEITADA','CANCELADO') AND s.dataFinalizacao IS NULL")
-    List<Solicitacao> findAtivas();
+    // Query nova para o SlaScheduler (busca só os ativos e não urgentes)
+    @Query("SELECT s FROM Solicitacao s WHERE s.status IN :statuses AND s.urgente = false")
+    List<Solicitacao> findAtivasParaSla(@Param("statuses") List<StatusSolicitacao> statuses);
 
     @Query("SELECT s FROM Solicitacao s WHERE s.createdAt BETWEEN :inicio AND :fim")
     List<Solicitacao> findByPeriodo(@Param("inicio") LocalDateTime inicio, @Param("fim") LocalDateTime fim);

@@ -95,10 +95,7 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     @Override
     @Transactional(readOnly = true)
     public SolicitacaoResponseDTO buscarPorId(UUID id) {
-        Solicitacao solicitacao = buscarEntidadePorId(id);
-        List<AnexoResponseDTO> anexos = anexoRepository.findBySolicitacaoId(id).stream()
-                .map(AnexoResponseDTO::fromEntity).toList();
-        return SolicitacaoResponseDTO.fromEntity(solicitacao, anexos);
+        return paraRespostaComAnexos(buscarEntidadePorId(id));
     }
 
     @Override
@@ -122,7 +119,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         registrarMovimentacao(solicitacao, "Status alterado",
                 antigo + " → " + novoStatus + (motivo != null ? " (" + motivo + ")" : ""), autor);
 
-        // Notifica o solicitante quando o chamado é finalizado ou rejeitado
         if (solicitacao.getUsuarioSolicitante() != null
                 && (novoStatus == StatusSolicitacao.CONCLUIDO
                 || novoStatus == StatusSolicitacao.FINALIZADA
@@ -130,10 +126,11 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
                 && (autor == null || !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId()))) {
             notificacaoService.enviar(solicitacao.getUsuarioSolicitante(),
                     "Atualização no seu chamado",
-                    solicitacao.getTitulo() + " agora está: " + novoStatus);
+                    solicitacao.getTitulo() + " agora está: " + novoStatus,
+                    solicitacao.getId());
         }
 
-        return SolicitacaoResponseDTO.fromEntity(solicitacaoRepository.save(solicitacao));
+        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
@@ -143,7 +140,7 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Users autor = userRepository.findById(autorId).orElse(null);
         solicitacao.setPrioridade(novaPrioridade);
         registrarMovimentacao(solicitacao, "Prioridade alterada", "Nova prioridade: " + novaPrioridade, autor);
-        return SolicitacaoResponseDTO.fromEntity(solicitacaoRepository.save(solicitacao));
+        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
@@ -161,12 +158,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         registrarMovimentacao(solicitacao, "Chamado atribuído",
                 autor != null ? autor.getName() + " atribuiu a " + tecnico.getName() : "Atribuído a " + tecnico.getName(), autor);
 
-        // Notifica o técnico
         notificacaoService.enviar(tecnico,
                 "Novo chamado atribuído",
-                "Você foi atribuído ao chamado: " + solicitacao.getTitulo());
+                "Você foi atribuído ao chamado: " + solicitacao.getTitulo(),
+                solicitacao.getId());
 
-        return SolicitacaoResponseDTO.fromEntity(solicitacaoRepository.save(solicitacao));
+        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
@@ -181,14 +178,14 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         registrarMovimentacao(solicitacao, urgente ? "Marcado como urgente" : "Urgência removida",
                 autor != null ? "Por " + autor.getName() : null, autor);
 
-        // Notifica o técnico responsável, se houver
         if (urgente && solicitacao.getTecnicoResponsavel() != null) {
             notificacaoService.enviar(solicitacao.getTecnicoResponsavel(),
                     "Chamado marcado como URGENTE",
-                    solicitacao.getTitulo());
+                    solicitacao.getTitulo(),
+                    solicitacao.getId());
         }
 
-        return SolicitacaoResponseDTO.fromEntity(solicitacaoRepository.save(solicitacao));
+        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
@@ -206,9 +203,10 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
 
             notificacaoService.enviar(ajudante,
                     "Você foi adicionado como ajudante",
-                    solicitacao.getTitulo());
+                    solicitacao.getTitulo(),
+                    solicitacao.getId());
         }
-        return SolicitacaoResponseDTO.fromEntity(solicitacaoRepository.save(solicitacao));
+        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
@@ -220,7 +218,7 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
             solicitacao.getAjudantes().removeIf(u -> u.getId().equals(ajudanteId));
             registrarMovimentacao(solicitacao, "Ajudante removido", null, autor);
         }
-        return SolicitacaoResponseDTO.fromEntity(solicitacaoRepository.save(solicitacao));
+        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
@@ -257,12 +255,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Comentario c = Comentario.builder().texto(texto).autor(autor).solicitacao(solicitacao).build();
         registrarMovimentacao(solicitacao, "Comentário adicionado", autor.getName() + ": " + texto, autor);
 
-        // Notifica o solicitante, se quem comentou não for ele mesmo
         if (solicitacao.getUsuarioSolicitante() != null
                 && !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId())) {
             notificacaoService.enviar(solicitacao.getUsuarioSolicitante(),
                     "Novo comentário no seu chamado",
-                    autor.getName() + ": " + texto);
+                    autor.getName() + ": " + texto,
+                    solicitacao.getId());
         }
 
         return ComentarioResponseDTO.fromEntity(comentarioRepository.save(c));
@@ -314,5 +312,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Movimentacao m = Movimentacao.builder()
                 .titulo(titulo).descricao(descricao).autor(autor).solicitacao(s).build();
         movimentacaoRepository.save(m);
+    }
+
+    // Método auxiliar novo para carregar os anexos
+    private SolicitacaoResponseDTO paraRespostaComAnexos(Solicitacao solicitacao) {
+        List<AnexoResponseDTO> anexos = anexoRepository.findBySolicitacaoId(solicitacao.getId()).stream()
+                .map(AnexoResponseDTO::fromEntity).toList();
+        return SolicitacaoResponseDTO.fromEntity(solicitacao, anexos);
     }
 }
