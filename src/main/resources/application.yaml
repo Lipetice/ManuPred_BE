@@ -64,4 +64,4 @@ app:
     generated-file-path: ${FIREBASE_CREDENTIALS_PATH:/tmp/firebase-service-account.json}
   google:
     # Pega do ambiente, se não tiver usa o do kipper-56bb0 (o seu amigo deve ter mandado o ID no texto, se não, coloque o ID aqui)
-    web-client-id: ${GOOGLE_WEB_CLIENT_ID:COLOCAR_O_ID_DO_KIPPER_56BB0_AQUI}
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
