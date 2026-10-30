@@ -9,6 +9,8 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.fiec.br.back_end.kipper.features.ia.exception.IaIndisponivelException;
+import com.fiec.br.back_end.kipper.features.ia.exception.LimiteIaException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -50,5 +52,15 @@ public class GlobalExceptionHandler {
         log.error("Erro interno não tratado: ", ex); // <-- ADICIONADO AQUI
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("erro", "Erro interno no servidor."));
+    }
+
+    @ExceptionHandler(IaIndisponivelException.class)
+    public ResponseEntity<Map<String, String>> handleIaIndisponivel(IaIndisponivelException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("erro", ex.getMessage()));
+    }
+
+    @ExceptionHandler(LimiteIaException.class)
+    public ResponseEntity<Map<String, String>> handleLimiteIa(LimiteIaException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("erro", ex.getMessage()));
     }
 }
