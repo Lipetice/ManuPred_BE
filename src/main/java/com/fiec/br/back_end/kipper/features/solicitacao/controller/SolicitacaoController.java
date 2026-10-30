@@ -75,7 +75,7 @@ public class SolicitacaoController {
         }
     }
 
-    @Operation(summary = "Buscar chamados", description = "Busca paginada com filtros. Funcionários e supervisores veem tudo; usuários comuns veem só os próprios.")
+    @Operation(summary = "Buscar chamados", description = "Busca paginada com filtros.")
     @GetMapping("/search")
     public ResponseEntity<Page<SolicitacaoResponseDTO>> search(
             @RequestParam(required = false) UUID id,
@@ -84,8 +84,12 @@ public class SolicitacaoController {
             @RequestParam(required = false) PrioridadeSolicitacao prioridade,
             @RequestParam(required = false) String numeroPatrimonio,
             @RequestParam(required = false) String localizacaoProblema,
-            @RequestParam(required = false) UUID usuarioSolicitanteId,
-            @RequestParam(required = false) UUID tecnicoResponsavelId,
+            @RequestParam(required = false) List<UUID> usuarioSolicitanteIds,
+            @RequestParam(required = false) List<UUID> tecnicoResponsavelIds,
+            @RequestParam(required = false) UUID tipoId,
+            @RequestParam(required = false) UUID localId,
+            @RequestParam(required = false) UUID setorId,
+            @RequestParam(required = false) Boolean urgente,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataAberturaInicio,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataAberturaFim,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFinalizacaoInicio,
@@ -93,11 +97,16 @@ public class SolicitacaoController {
             @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
     ) {
         Users u = getUsuarioLogado();
-        UUID solicitanteFiltro = isFuncionario(u) ? usuarioSolicitanteId : u.getId();
+
+        // Lógica de permissão mantida: se não for funcionário, só vê os próprios
+        List<UUID> solicitanteFiltro = isFuncionario(u) ? usuarioSolicitanteIds : List.of(u.getId());
+
         SolicitacaoSearchFilterDTO filtro = new SolicitacaoSearchFilterDTO(
                 id, termo, status, prioridade, numeroPatrimonio, localizacaoProblema,
-                solicitanteFiltro, tecnicoResponsavelId,
+                solicitanteFiltro, tecnicoResponsavelIds,
+                tipoId, localId, setorId, urgente,
                 dataAberturaInicio, dataAberturaFim, dataFinalizacaoInicio, dataFinalizacaoFim);
+
         return ResponseEntity.ok(solicitacaoService.search(filtro, pageable));
     }
 

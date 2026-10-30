@@ -18,4 +18,7 @@ public interface UserRepository extends JpaRepository<Users, UUID> {
     boolean existsByEmail(String email);
 
     List<Users> findAllByFcmToken(String fcmToken);
+
+    // Novo método para a IA buscar usuários por nome
+    List<Users> findByNameContainingIgnoreCase(String nome);
 }
