@@ -6,6 +6,7 @@ import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.model.entities.Auditoria;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -62,6 +63,8 @@ public class Solicitacao extends Auditoria {
     @JoinColumn(name = "tecnico_responsavel_id")
     private Users tecnicoResponsavel;
 
+    // @BatchSize PERMITIDO APENAS EM COLEÇÕES
+    @BatchSize(size = 20)
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "solicitacao_ajudantes",
@@ -80,10 +83,14 @@ public class Solicitacao extends Auditoria {
     @Column(name = "motivo_rejeicao", length = 500)
     private String motivoRejeicao;
 
+    // @BatchSize PERMITIDO APENAS EM COLEÇÕES
+    @BatchSize(size = 20)
     @OneToMany(mappedBy = "solicitacao", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<Comentario> comentarios = new ArrayList<>();
 
+    // @BatchSize PERMITIDO APENAS EM COLEÇÕES
+    @BatchSize(size = 20)
     @OneToMany(mappedBy = "solicitacao", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<Movimentacao> movimentacoes = new ArrayList<>();

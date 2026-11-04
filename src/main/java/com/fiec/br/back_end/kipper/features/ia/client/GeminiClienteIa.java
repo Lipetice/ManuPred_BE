@@ -3,6 +3,7 @@ package com.fiec.br.back_end.kipper.features.ia.client;
 import com.fiec.br.back_end.kipper.features.ia.exception.IaIndisponivelException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -17,10 +18,16 @@ public class GeminiClienteIa implements ClienteIa {
     private final String modelo;
 
     public GeminiClienteIa(@Value("${app.ia.api-key}") String apiKey,
-                           @Value("${app.ia.modelo}") String modelo) {
+                           @Value("${app.ia.modelo}") String modelo,
+                           @Value("${app.ia.timeout-segundos:20}") int timeoutSegundos) {
         this.apiKey = apiKey;
         this.modelo = modelo;
-        this.restClient = RestClient.create();
+
+        // Configurando o Timeout para evitar que a requisição trave para sempre
+        var factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(timeoutSegundos * 1000);
+        factory.setReadTimeout(timeoutSegundos * 1000);
+        this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
     @Override
@@ -29,7 +36,8 @@ public class GeminiClienteIa implements ClienteIa {
             throw new IaIndisponivelException("IA indisponível no momento.");
         }
 
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent?key=" + apiKey;
+        // CORREÇÃO: Chave retirada da URL
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelo + ":generateContent";
 
         Map<String, Object> body = Map.of(
                 "systemInstruction", Map.of("parts", new Object[]{Map.of("text", instrucaoSistema)}),
@@ -42,16 +50,25 @@ public class GeminiClienteIa implements ClienteIa {
         try {
             Map response = restClient.post()
                     .uri(url)
+                    .header("x-goog-api-key", apiKey) // Chave no Header (Seguro)
                     .body(body)
                     .retrieve()
                     .body(Map.class);
 
-            // Navega no JSON de resposta do Gemini para pegar o texto
             var candidates = (java.util.List<Map>) response.get("candidates");
+
+            // Verifica se o Gemini bloqueou a resposta
+            if (candidates == null || candidates.isEmpty()) {
+                log.warn("Gemini não retornou candidatos. Resposta bloqueada ou inválida.");
+                throw new IaIndisponivelException("A IA não conseguiu processar a solicitação. Tente novamente.");
+            }
+
             var content = (Map) candidates.get(0).get("content");
             var parts = (java.util.List<Map>) content.get("parts");
             return (String) parts.get(0).get("text");
 
+        } catch (IaIndisponivelException e) {
+            throw e; // Repassa o erro amigável
         } catch (Exception e) {
             log.error("Erro ao chamar Gemini: {}", e.getMessage());
             throw new IaIndisponivelException("Não foi possível obter resposta da IA.");

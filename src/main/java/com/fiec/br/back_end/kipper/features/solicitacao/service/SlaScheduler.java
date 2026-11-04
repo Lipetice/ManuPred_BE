@@ -24,13 +24,11 @@ public class SlaScheduler {
     private final SolicitacaoRepository solicitacaoRepository;
     private final MovimentacaoRepository movimentacaoRepository;
 
-    // Roda a cada 15 minutos
     @Scheduled(fixedRate = 900_000)
     @Transactional
     public void verificarSla() {
         log.info("Verificando SLA...");
 
-        // Busca no banco apenas os que precisam ser verificados
         List<StatusSolicitacao> statusesAtivos = List.of(
                 StatusSolicitacao.ABERTO,
                 StatusSolicitacao.EM_ANDAMENTO,
@@ -43,7 +41,8 @@ public class SlaScheduler {
         int marcados = 0;
 
         for (Solicitacao s : ativas) {
-            if (s.getTipo() == null || s.getTipo().getSlaHoras() == null) continue;
+            // CORREÇÃO: Adicionado 'slaHoras <= 0' para não estourar SLA zerado
+            if (s.getTipo() == null || s.getTipo().getSlaHoras() == null || s.getTipo().getSlaHoras() <= 0) continue;
             if (s.getCreatedAt() == null) continue;
 
             long horasDecorridas = Duration.between(s.getCreatedAt(), agora).toHours();

@@ -1,0 +1,15 @@
+/* swagger-theme.css - Tema escuro simples */
+html {
+    box-sizing: border-box;
+    overflow-y: scroll;
+}
+body {
+    margin: 0;
+    background: #1c1e21;
+}
+.swagger-ui {
+    filter: invert(88%) hue-rotate(180deg);
+}
+.swagger-ui .microlight {
+    filter: invert(100%) hue-rotate(180deg);
+}

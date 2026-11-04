@@ -60,10 +60,11 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Permite qualquer origem dinamicamente sem violar a regra do wildcard '*'
-        configuration.setAllowedOrigins(List.of("*"));
+        // CORREÇÃO: allowedOriginPatterns permite o '*' junto com credenciais no Spring Security 6+
+        configuration.setAllowedOriginPatterns(List.of("*"));
         configuration.setAllowedMethods(List.of("*"));
         configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

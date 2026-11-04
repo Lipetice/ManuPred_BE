@@ -26,12 +26,15 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -40,17 +43,17 @@ import java.util.stream.Collectors;
 public class IaServiceImpl implements IaService {
 
     private final ClienteIa clienteIa;
-    private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
     private final TipoChamadoRepository tipoChamadoRepository;
     private final LocalRepository localRepository;
     private final SetorRepository setorRepository;
     private final SolicitacaoService solicitacaoService;
 
-    // Novas dependências para o Resumo
     private final SolicitacaoRepository solicitacaoRepository;
     private final ComentarioRepository comentarioRepository;
     private final MovimentacaoRepository movimentacaoRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${app.ia.api-key}")
     private String apiKey;
@@ -58,7 +61,7 @@ public class IaServiceImpl implements IaService {
     @Value("${app.ia.limite-por-minuto:10}")
     private int limitePorMinuto;
 
-    private final Map<String, List<Long>> controleChamadas = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentLinkedQueue<Long>> controleChamadas = new ConcurrentHashMap<>();
 
     @Override
     public IaStatusDTO verificarStatus() {
@@ -83,7 +86,6 @@ public class IaServiceImpl implements IaService {
             );
         }
 
-        // --- Validações e Traduções ---
         StatusSolicitacao status = null;
         if (filtroIa.status() != null) {
             try { status = StatusSolicitacao.valueOf(filtroIa.status()); filtrosAplicados.put("status", status); }
@@ -99,7 +101,7 @@ public class IaServiceImpl implements IaService {
         UUID tipoId = null;
         if (filtroIa.tipoNome() != null) {
             var tipo = tipoChamadoRepository.findAll().stream()
-                    .filter(t -> t.getNome().equalsIgnoreCase(filtroIa.tipoNome()))
+                    .filter(t -> removerAcentos(t.getNome()).equalsIgnoreCase(removerAcentos(filtroIa.tipoNome())))
                     .findFirst().orElse(null);
             if (tipo != null) { tipoId = tipo.getId(); filtrosAplicados.put("tipo", tipo.getNome()); }
             else avisos.add("Tipo '" + filtroIa.tipoNome() + "' não encontrado; ignorado.");
@@ -108,7 +110,7 @@ public class IaServiceImpl implements IaService {
         UUID localId = null;
         if (filtroIa.localNome() != null) {
             var local = localRepository.findAll().stream()
-                    .filter(l -> l.getNome().equalsIgnoreCase(filtroIa.localNome()))
+                    .filter(l -> removerAcentos(l.getNome()).equalsIgnoreCase(removerAcentos(filtroIa.localNome())))
                     .findFirst().orElse(null);
             if (local != null) { localId = local.getId(); filtrosAplicados.put("local", local.getNome()); }
             else avisos.add("Local '" + filtroIa.localNome() + "' não encontrado; ignorado.");
@@ -117,7 +119,7 @@ public class IaServiceImpl implements IaService {
         UUID setorId = null;
         if (filtroIa.setorNome() != null) {
             var setor = setorRepository.findAll().stream()
-                    .filter(s -> s.getNome().equalsIgnoreCase(filtroIa.setorNome()))
+                    .filter(s -> removerAcentos(s.getNome()).equalsIgnoreCase(removerAcentos(filtroIa.setorNome())))
                     .findFirst().orElse(null);
             if (setor != null) { setorId = setor.getId(); filtrosAplicados.put("setor", setor.getNome()); }
             else avisos.add("Setor '" + filtroIa.setorNome() + "' não encontrado; ignorado.");
@@ -168,7 +170,7 @@ public class IaServiceImpl implements IaService {
         String tipoId = null;
         if (sugestao.tipoNome() != null) {
             var tipo = tipoChamadoRepository.findAll().stream()
-                    .filter(t -> t.getNome().equalsIgnoreCase(sugestao.tipoNome()))
+                    .filter(t -> removerAcentos(t.getNome()).equalsIgnoreCase(removerAcentos(sugestao.tipoNome())))
                     .findFirst().orElse(null);
             if (tipo != null) tipoId = tipo.getId().toString();
         }
@@ -186,10 +188,23 @@ public class IaServiceImpl implements IaService {
     public ResumoSolicitacaoResponseDTO gerarResumoSolicitacao(UUID solicitacaoId, String emailUsuario) {
         verificarLimite(emailUsuario);
 
+        Users usuarioLogado = userRepository.findByEmail(emailUsuario)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado."));
+
         Solicitacao solicitacao = solicitacaoRepository.findById(solicitacaoId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Chamado não encontrado."));
 
-        // Monta o histórico para enviar à IA
+        boolean ehAdmin = usuarioLogado.getRole() == com.fiec.br.back_end.kipper.features.user.model.entities.UserRole.ADMIN_ROLE;
+        boolean ehFuncionario = usuarioLogado.getRole() == com.fiec.br.back_end.kipper.features.user.model.entities.UserRole.SUPERVISOR_ROLE
+                || usuarioLogado.getRole() == com.fiec.br.back_end.kipper.features.user.model.entities.UserRole.FUNCIONARIO_ROLE;
+        boolean ehDono = usuarioLogado.getId().equals(solicitacao.getUsuarioSolicitante().getId());
+        boolean ehTecnico = solicitacao.getTecnicoResponsavel() != null && usuarioLogado.getId().equals(solicitacao.getTecnicoResponsavel().getId());
+        boolean ehAjudante = solicitacao.getAjudantes() != null && solicitacao.getAjudantes().stream().anyMatch(a -> a.getId().equals(usuarioLogado.getId()));
+
+        if (!ehAdmin && !ehFuncionario && !ehDono && !ehTecnico && !ehAjudante) {
+            throw new org.springframework.security.access.AccessDeniedException("Sem permissão para ver este chamado.");
+        }
+
         StringBuilder contexto = new StringBuilder();
         contexto.append("Título: ").append(solicitacao.getTitulo()).append("\n");
         contexto.append("Descrição: ").append(solicitacao.getDescricao()).append("\n");
@@ -211,7 +226,6 @@ public class IaServiceImpl implements IaService {
         }
 
         contexto.append("\n--- COMENTÁRIOS (Últimos 30) ---\n");
-        // Pega os últimos 30 comentários para não estourar o limite da IA
         List<Comentario> comentarios = comentarioRepository.findBySolicitacaoIdOrderByCreatedAtAsc(solicitacaoId);
         int start = Math.max(0, comentarios.size() - 30);
         for (int i = start; i < comentarios.size(); i++) {
@@ -236,12 +250,11 @@ public class IaServiceImpl implements IaService {
         );
     }
 
-    // ============ MÉTODOS AUXILIARES ============
-
     private void verificarLimite(String email) {
         long agora = System.currentTimeMillis();
-        controleChamadas.putIfAbsent(email, new ArrayList<>());
-        List<Long> chamadas = controleChamadas.get(email);
+
+        controleChamadas.putIfAbsent(email, new ConcurrentLinkedQueue<>());
+        ConcurrentLinkedQueue<Long> chamadas = controleChamadas.get(email);
 
         chamadas.removeIf(tempo -> agora - tempo > 60000);
 
@@ -264,19 +277,23 @@ public class IaServiceImpl implements IaService {
     private List<UUID> resolverUsuarios(String nome, String papel, List<String> avisos, Map<String, Object> filtros) {
         if (nome == null || nome.isBlank()) return null;
 
-        List<Users> users = userRepository.findByNameContainingIgnoreCase(nome);
-        if (users.isEmpty()) {
+        String nomeSemAcento = removerAcentos(nome);
+        List<Users> todosUsuarios = userRepository.findAll().stream()
+                .filter(u -> removerAcentos(u.getName()).toLowerCase().contains(nomeSemAcento.toLowerCase()))
+                .toList();
+
+        if (todosUsuarios.isEmpty()) {
             avisos.add(papel + " '" + nome + "' não encontrado. O filtro foi ignorado.");
             return null;
         }
 
-        if (users.size() > 1) {
-            String nomes = users.stream().map(Users::getName).collect(Collectors.joining(", "));
+        if (todosUsuarios.size() > 1) {
+            String nomes = todosUsuarios.stream().map(Users::getName).collect(Collectors.joining(", "));
             avisos.add("Há mais de um " + papel + " com o nome '" + nome + "': " + nomes + ". Mostrei os resultados de todos.");
         }
 
-        filtros.put(papel.toLowerCase(), users.size() == 1 ? users.get(0).getName() : "Múltiplos (" + nome + ")");
-        return users.stream().map(Users::getId).collect(Collectors.toList());
+        filtros.put(papel.toLowerCase(), todosUsuarios.size() == 1 ? todosUsuarios.get(0).getName() : "Múltiplos (" + nome + ")");
+        return todosUsuarios.stream().map(Users::getId).collect(Collectors.toList());
     }
 
     private LocalDateTime parseDataInicio(String dataString, List<String> avisos, String campo) {
@@ -300,7 +317,8 @@ public class IaServiceImpl implements IaService {
     }
 
     private String construirPromptBusca() {
-        String hoje = LocalDate.now().toString();
+        // CORREÇÃO: Fuso horário de São Paulo
+        String hoje = LocalDate.now(ZoneId.of("America/Sao_Paulo")).toString();
         String tipos = tipoChamadoRepository.findAll().stream().map(t -> t.getNome()).collect(Collectors.joining(", "));
         String locais = localRepository.findAll().stream().map(l -> l.getNome()).collect(Collectors.joining(", "));
         String setores = setorRepository.findAll().stream().map(s -> s.getNome()).collect(Collectors.joining(", "));
@@ -359,5 +377,11 @@ public class IaServiceImpl implements IaService {
             - tipoNome deve ser EXATAMENTE um destes ou null: [%s]
             - pareceUrgente = true só para risco à segurança ou dano grave imediato. Explique em motivoUrgencia.
             """.formatted(tipos);
+    }
+
+    private String removerAcentos(String texto) {
+        if (texto == null) return "";
+        return Normalizer.normalize(texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
     }
 }
