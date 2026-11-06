@@ -23,10 +23,12 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final AuthenticationProvider authenticationProvider;
+    private final OAuth2SuccessHandler oauth2SuccessHandler;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, AuthenticationProvider authenticationProvider) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, AuthenticationProvider authenticationProvider, OAuth2SuccessHandler oAuth2SuccessHandler) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.authenticationProvider = authenticationProvider;
+        this.oauth2SuccessHandler = oAuth2SuccessHandler;
     }
 
     @Bean
@@ -39,11 +41,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/users", "/api/v1/users/auth/firebase").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
+                        .requestMatchers( "/oauth2/**", "/login/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(oauth2SuccessHandler)
+                )
+
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

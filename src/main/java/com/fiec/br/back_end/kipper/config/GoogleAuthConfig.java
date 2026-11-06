@@ -12,7 +12,7 @@ import java.util.Collections;
 @Configuration
 public class GoogleAuthConfig {
 
-    @Value("${app.google.web-client-id}")
+    @Value("${app.oauth2.redirect-uri}")
     private String webClientId;
 
     @Bean
