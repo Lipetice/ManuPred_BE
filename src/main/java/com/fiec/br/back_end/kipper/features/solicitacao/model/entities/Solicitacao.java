@@ -4,94 +4,48 @@ import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.PrioridadeSo
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolicitacao;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.model.entities.Auditoria;
-import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.BatchSize;
-
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
-@Entity
-@Table(name = "tb_solicitacoes")
+@Document(collection = "tb_solicitacoes")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 @EqualsAndHashCode(of = "id", callSuper = false)
 public class Solicitacao extends Auditoria {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @Builder.Default
+    private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false, length = 300)
     private String titulo;
-
-    @Column(nullable = false, columnDefinition = "TEXT")
     private String descricao;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
     private StatusSolicitacao status;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
     private PrioridadeSolicitacao prioridade;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "tipo_chamado_id")
+    @DBRef
     private TipoChamado tipo;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "local_id")
+    @DBRef
     private Local local;
 
-    @Column(name = "localizacao_problema", nullable = false, length = 200)
     private String localizacaoProblema;
-
-    @Column(name = "numero_patrimonio", length = 50)
     private String numeroPatrimonio;
+    private Boolean urgente;
 
-    @Column(nullable = false)
-    @Builder.Default
-    private Boolean urgente = false;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "usuario_solicitante_id", nullable = false)
+    @DBRef
     private Users usuarioSolicitante;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "tecnico_responsavel_id")
+    @DBRef
     private Users tecnicoResponsavel;
 
-    // @BatchSize PERMITIDO APENAS EM COLEÇÕES
-    @BatchSize(size = 20)
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-            name = "solicitacao_ajudantes",
-            joinColumns = @JoinColumn(name = "solicitacao_id"),
-            inverseJoinColumns = @JoinColumn(name = "usuario_id")
-    )
+    @DBRef
     @Builder.Default
     private List<Users> ajudantes = new ArrayList<>();
 
-    @Column(name = "data_finalizacao")
     private LocalDateTime dataFinalizacao;
-
-    @Column(name = "data_conclusao")
     private LocalDateTime dataConclusao;
-
-    @Column(name = "motivo_rejeicao", length = 500)
     private String motivoRejeicao;
-
-    // @BatchSize PERMITIDO APENAS EM COLEÇÕES
-    @BatchSize(size = 20)
-    @OneToMany(mappedBy = "solicitacao", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<Comentario> comentarios = new ArrayList<>();
-
-    // @BatchSize PERMITIDO APENAS EM COLEÇÕES
-    @BatchSize(size = 20)
-    @OneToMany(mappedBy = "solicitacao", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<Movimentacao> movimentacoes = new ArrayList<>();
 }

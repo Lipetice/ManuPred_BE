@@ -34,6 +34,8 @@ public class UserController {
                     @ApiResponse(responseCode = "400", description = "E-mail já cadastrado ou dados inválidos")
             }
     )
+    // CORREÇÃO: Adicionado PreAuthorize para restringir a ADMIN
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<UserResponseDTO> createUser(@RequestBody @Valid CreateUserRequestDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(dto));

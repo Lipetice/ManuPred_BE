@@ -74,10 +74,7 @@ jobs:
       - name: Rodar novo container
         run: |
           docker run -d --pull always --name manupred-be-app -p 8080:8080 \
-            -e DB_HOST=${{ secrets.DB_HOST }} \
-            -e DB_PORT=${{ secrets.DB_PORT }} \
-            -e DB_USERNAME=${{ secrets.DB_USERNAME }} \
-            -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            -e MONGODB_URI=${{ secrets.MONGODB_URI }} \
             -e JWT_SECRET=${{ secrets.JWT_SECRET }} \
             -e FIREBASE_CREDENTIALS_JSON='${{ secrets.FIREBASE_CREDENTIALS_JSON }}' \
             ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest

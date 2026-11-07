@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -25,7 +24,6 @@ public class SlaScheduler {
     private final MovimentacaoRepository movimentacaoRepository;
 
     @Scheduled(fixedRate = 900_000)
-    @Transactional
     public void verificarSla() {
         log.info("Verificando SLA...");
 
@@ -41,7 +39,6 @@ public class SlaScheduler {
         int marcados = 0;
 
         for (Solicitacao s : ativas) {
-            // CORREÇÃO: Adicionado 'slaHoras <= 0' para não estourar SLA zerado
             if (s.getTipo() == null || s.getTipo().getSlaHoras() == null || s.getTipo().getSlaHoras() <= 0) continue;
             if (s.getCreatedAt() == null) continue;
 

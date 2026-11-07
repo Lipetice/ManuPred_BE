@@ -19,7 +19,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -34,14 +33,12 @@ public class UserServiceImpl implements UserService {
     private final AuditService auditService;
 
     @Override
-    @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         return userRepository.findByEmail(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuário não encontrado com E-mail: " + username));
     }
 
     @Override
-    @Transactional
     public UserResponseDTO createUser(CreateUserRequestDTO dto) {
         if (userRepository.existsByEmail(dto.email())) {
             throw new IllegalArgumentException("E-mail já cadastrado no sistema.");
@@ -55,24 +52,24 @@ public class UserServiceImpl implements UserService {
         return UserResponseDTO.fromEntity(userRepository.save(user));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
     public UserResponseDTO findById(UUID id) {
         return UserResponseDTO.fromEntity(userRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com ID: " + id)));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
     public UserResponseDTO findByEmail(String email) {
         return UserResponseDTO.fromEntity(userRepository.findByEmail(email)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com E-mail: " + email)));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
     public List<UserResponseDTO> findAll() {
         return userRepository.findAll().stream().map(UserResponseDTO::fromEntity).toList();
     }
 
-    @Override @Transactional
+    @Override
     public void deleteUser(UUID id) {
         if (!userRepository.existsById(id)) {
             throw new RecursoNaoEncontradoException("Usuário não encontrado para deleção.");
@@ -80,7 +77,7 @@ public class UserServiceImpl implements UserService {
         userRepository.deleteById(id);
     }
 
-    @Override @Transactional
+    @Override
     public TokenResponseDTO verifyAndAuthenticateFirebaseToken(String firebaseToken) {
         try {
             FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(firebaseToken);
@@ -107,7 +104,6 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
     public UserResponseDTO atualizarRole(UUID id, UserRole role) {
         Users user = userRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com ID: " + id));
@@ -124,9 +120,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
     public void atualizarFcmToken(String email, String fcmToken) {
-        // Remove o token de qualquer outro usuário (para o celular não receber notificação de outra conta)
         List<Users> usuariosComToken = userRepository.findAllByFcmToken(fcmToken);
         for (Users u : usuariosComToken) {
             if (!u.getEmail().equals(email)) {
@@ -135,7 +129,6 @@ public class UserServiceImpl implements UserService {
             }
         }
 
-        // Atualiza o token no usuário logado
         Users user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado."));
         user.setFcmToken(fcmToken);
