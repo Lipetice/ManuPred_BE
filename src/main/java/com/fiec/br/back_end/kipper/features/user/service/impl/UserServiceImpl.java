@@ -121,4 +121,23 @@ public class UserServiceImpl implements UserService {
 
         return UserResponseDTO.fromEntity(salvo);
     }
+
+    @Override
+    @Transactional
+    public void atualizarFcmToken(UUID userId, String fcmToken) {
+        Users user = userRepository.findById(userId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com ID: " + userId));
+
+        // Cada aparelho tem um único token FCM. Se outra conta já tinha feito login neste
+        // aparelho, o token é retirado dela para que as notificações não cheguem à pessoa errada.
+        userRepository.findAllByFcmToken(fcmToken).stream()
+                .filter(outro -> !outro.getId().equals(userId))
+                .forEach(outro -> {
+                    outro.setFcmToken(null);
+                    userRepository.save(outro);
+                });
+
+        user.setFcmToken(fcmToken);
+        userRepository.save(user);
+    }
 }

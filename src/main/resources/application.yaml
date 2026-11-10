@@ -52,4 +52,4 @@ app:
   google:
     # Web Client ID do Google Cloud Console (OAuth 2.0 Client ID do tipo "Web Application")
     # Defina a variável de ambiente GOOGLE_WEB_CLIENT_ID ou substitua o valor padrão abaixo
-    web-client-id: 99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}

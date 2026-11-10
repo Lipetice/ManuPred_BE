@@ -62,6 +62,17 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<UserMeDTO> getMe() {
         Users user = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        return ResponseEntity.ok(new UserMeDTO(user.getEmail(), user.getName()));
+        return ResponseEntity.ok(new UserMeDTO(user.getId(), user.getEmail(), user.getName(), user.getRole()));
+    }
+
+    /**
+     * O app envia o token FCM do aparelho após o login e sempre que o Firebase gerar um novo.
+     * Sem ele, o NotificacaoService não tem para onde mandar as notificações push.
+     */
+    @PatchMapping("/me/fcm-token")
+    public ResponseEntity<Void> atualizarFcmToken(@RequestBody @Valid FcmTokenRequestDTO dto) {
+        Users user = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        userService.atualizarFcmToken(user.getId(), dto.fcmToken());
+        return ResponseEntity.noContent().build();
     }
 }
