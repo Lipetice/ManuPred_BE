@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -24,26 +23,24 @@ public class SlaScheduler {
     private final SolicitacaoRepository solicitacaoRepository;
     private final MovimentacaoRepository movimentacaoRepository;
 
-    // Roda a cada 15 minutos (900000 ms)
     @Scheduled(fixedRate = 900_000)
-    @Transactional
     public void verificarSla() {
         log.info("Verificando SLA...");
 
-        List<Solicitacao> ativas = solicitacaoRepository.findAll().stream()
-                .filter(s -> s.getStatus() != StatusSolicitacao.FINALIZADA
-                        && s.getStatus() != StatusSolicitacao.REJEITADA
-                        && s.getStatus() != StatusSolicitacao.CANCELADO
-                        && s.getStatus() != StatusSolicitacao.CONCLUIDO)
-                .toList();
+        List<StatusSolicitacao> statusesAtivos = List.of(
+                StatusSolicitacao.ABERTO,
+                StatusSolicitacao.EM_ANDAMENTO,
+                StatusSolicitacao.AGUARDANDO_ASSISTENCIA_EXTERNA
+        );
+
+        List<Solicitacao> ativas = solicitacaoRepository.findAtivasParaSla(statusesAtivos);
 
         LocalDateTime agora = LocalDateTime.now();
         int marcados = 0;
 
         for (Solicitacao s : ativas) {
-            if (s.getTipo() == null || s.getTipo().getSlaHoras() == null) continue;
+            if (s.getTipo() == null || s.getTipo().getSlaHoras() == null || s.getTipo().getSlaHoras() <= 0) continue;
             if (s.getCreatedAt() == null) continue;
-            if (Boolean.TRUE.equals(s.getUrgente())) continue;
 
             long horasDecorridas = Duration.between(s.getCreatedAt(), agora).toHours();
             if (horasDecorridas >= s.getTipo().getSlaHoras()) {

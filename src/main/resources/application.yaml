@@ -1,25 +1,29 @@
 spring:
   application:
     name: kipper
-  datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/kipper_db?createDatabaseIfNotExist=true
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:1234}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.MySQLDialect
+
+  mongodb:
+    # Conexão da nuvem (Atlas): defina a variável de ambiente MONGODB_URI. Nunca coloque a senha aqui.
+    uri: ${MONGODB_URI:mongodb://localhost:27017/kipper_db}
+    auto-index-creation: true
+    uuid-representation: standard
   servlet:
     multipart:
       enabled: true
       max-file-size: 10MB
       max-request-size: 10MB
       resolve-lazily: false
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope:
+              - openid
+              - profile
+              - email
 server:
   port: 8080
   shutdown: graceful
@@ -37,19 +41,38 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,db
+          include: readinessState,mongo
   metrics:
     tags:
       application: ${spring.application.name}
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    try-it-out-enabled: true
+    filter: true
+    display-request-duration: true
+    default-models-expand-depth: 1
+    default-model-expand-depth: 1
+  show-actuator: false
 app:
   jwt:
-    # Em produção, defina a variável de ambiente JWT_SECRET (>= 32 caracteres aleatórios)
     secret: ${JWT_SECRET:TrocarPorUmaChaveAleatoriaDeProducaoComPeloMenos32Caracteres}
   firebase:
-    # Em produção, defina FIREBASE_CREDENTIALS_JSON com o conteúdo do service-account.json
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
     generated-file-path: ${FIREBASE_CREDENTIALS_PATH:/tmp/firebase-service-account.json}
   google:
-    # Web Client ID do Google Cloud Console (OAuth 2.0 Client ID do tipo "Web Application")
-    # Defina a variável de ambiente GOOGLE_WEB_CLIENT_ID ou substitua o valor padrão abaixo
     web-client-id: ${GOOGLE_WEB_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
+  oauth2:
+    redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:5173/oauth2/redirect}
+  ia:
+    provedor: ${IA_PROVEDOR:gemini}
+    api-key: ${IA_API_KEY:}
+    modelo: ${IA_MODELO:gemini-2.5-flash}
+    timeout-segundos: ${IA_TIMEOUT:20}
+    limite-por-minuto: ${IA_LIMITE_MINUTO:10}

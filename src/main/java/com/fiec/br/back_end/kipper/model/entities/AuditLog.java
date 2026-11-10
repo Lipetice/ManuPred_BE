@@ -1,31 +1,23 @@
 package com.fiec.br.back_end.kipper.model.entities;
 
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
-import jakarta.persistence.*;
 import lombok.*;
-
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Entity
-@Table(name = "tb_audit_log")
+@Document(collection = "tb_audit_log")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 @EqualsAndHashCode(of = "id", callSuper = false)
 public class AuditLog {
-
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @Column(nullable = false, length = 100)
+    @Builder.Default
+    private UUID id = UUID.randomUUID();
     private String acao;
-
-    @Column(length = 500)
     private String detalhe;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "autor_id")
+    @DBRef
     private Users autor;
-
-    @Column(name = "criado_em", nullable = false)
-    private java.time.LocalDateTime criadoEm;
+    private LocalDateTime criadoEm;
 }

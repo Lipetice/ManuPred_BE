@@ -12,7 +12,9 @@ import com.fiec.br.back_end.kipper.features.solicitacao.repositories.SetorReposi
 import com.fiec.br.back_end.kipper.features.solicitacao.repositories.TipoChamadoRepository;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
-import com.fiec.br.back_end.kipper.model.service.AuditService;
+import com.fiec.br.back_end.kipper.model.service.AuditService; // <--- CORRIGIDO AQUI
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
+@Tag(name = "Administração", description = "Gerenciamento de tipos, setores, locais e auditoria (Apenas ADMIN)")
 public class AdminController {
 
     private final TipoChamadoRepository tipoRepo;
@@ -39,11 +42,13 @@ public class AdminController {
     }
 
     // ============ TIPOS DE CHAMADO ============
+    @Operation(summary = "Listar tipos de chamado")
     @GetMapping("/tipos")
     public ResponseEntity<List<TipoChamado>> listarTipos() {
         return ResponseEntity.ok(tipoRepo.findAll());
     }
 
+    @Operation(summary = "Criar tipo de chamado")
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/tipos")
     public ResponseEntity<TipoChamado> criarTipo(@RequestBody TipoChamadoDTO dto) {
@@ -56,6 +61,7 @@ public class AdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(salvo);
     }
 
+    @Operation(summary = "Atualizar tipo de chamado")
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/tipos/{id}")
     public ResponseEntity<TipoChamado> atualizarTipo(@PathVariable UUID id, @RequestBody TipoChamadoDTO dto) {
@@ -67,6 +73,7 @@ public class AdminController {
         return ResponseEntity.ok(tipoRepo.save(t));
     }
 
+    @Operation(summary = "Deletar tipo de chamado")
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/tipos/{id}")
     public ResponseEntity<Void> deletarTipo(@PathVariable UUID id) {
@@ -78,11 +85,13 @@ public class AdminController {
     }
 
     // ============ SETORES ============
+    @Operation(summary = "Listar setores")
     @GetMapping("/setores")
     public ResponseEntity<List<Setor>> listarSetores() {
         return ResponseEntity.ok(setorRepo.findAll());
     }
 
+    @Operation(summary = "Criar setor")
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/setores")
     public ResponseEntity<Setor> criarSetor(@RequestBody SetorDTO dto) {
@@ -97,6 +106,7 @@ public class AdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(salvo);
     }
 
+    @Operation(summary = "Deletar setor")
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/setores/{id}")
     public ResponseEntity<Void> deletarSetor(@PathVariable UUID id) {
@@ -108,11 +118,13 @@ public class AdminController {
     }
 
     // ============ LOCAIS ============
+    @Operation(summary = "Listar locais")
     @GetMapping("/locais")
     public ResponseEntity<List<Local>> listarLocais() {
         return ResponseEntity.ok(localRepo.findAll());
     }
 
+    @Operation(summary = "Criar local")
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/locais")
     public ResponseEntity<Local> criarLocal(@RequestBody LocalDTO dto) {
@@ -126,6 +138,7 @@ public class AdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(salvo);
     }
 
+    @Operation(summary = "Deletar local")
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/locais/{id}")
     public ResponseEntity<Void> deletarLocal(@PathVariable UUID id) {
@@ -137,9 +150,10 @@ public class AdminController {
     }
 
     // ============ AUDITORIA ============
+    @Operation(summary = "Listar logs de auditoria")
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/auditoria")
-    public ResponseEntity<List<com.fiec.br.back_end.kipper.model.entities.AuditLog>> listarAuditoria() {
+    public ResponseEntity<List<com.fiec.br.back_end.kipper.model.entities.AuditLog>> listarAuditoria() { // <--- CORRIGIDO AQUI TAMBÉM
         return ResponseEntity.ok(auditService.listar());
     }
 }

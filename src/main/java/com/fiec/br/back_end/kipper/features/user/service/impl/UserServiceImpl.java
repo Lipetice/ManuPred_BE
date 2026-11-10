@@ -1,22 +1,24 @@
 package com.fiec.br.back_end.kipper.features.user.service.impl;
 
-import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseToken;
+import com.fiec.br.back_end.kipper.exception.RecursoNaoEncontradoException;
 import com.fiec.br.back_end.kipper.config.JwtUtil;
 import com.fiec.br.back_end.kipper.features.auth.models.dto.TokenResponseDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.CreateUserRequestDTO;
 import com.fiec.br.back_end.kipper.features.user.model.dto.UserResponseDTO;
+import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import com.fiec.br.back_end.kipper.features.user.service.UserService;
-import com.fiec.br.back_end.kipper.exception.RecursoNaoEncontradoException;
+import com.fiec.br.back_end.kipper.model.service.AuditService;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseToken;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -28,16 +30,15 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final AuditService auditService;
 
     @Override
-    @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         return userRepository.findByEmail(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuário não encontrado com E-mail: " + username));
     }
 
     @Override
-    @Transactional
     public UserResponseDTO createUser(CreateUserRequestDTO dto) {
         if (userRepository.existsByEmail(dto.email())) {
             throw new IllegalArgumentException("E-mail já cadastrado no sistema.");
@@ -51,24 +52,24 @@ public class UserServiceImpl implements UserService {
         return UserResponseDTO.fromEntity(userRepository.save(user));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
     public UserResponseDTO findById(UUID id) {
         return UserResponseDTO.fromEntity(userRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com ID: " + id)));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
     public UserResponseDTO findByEmail(String email) {
         return UserResponseDTO.fromEntity(userRepository.findByEmail(email)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com E-mail: " + email)));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
     public List<UserResponseDTO> findAll() {
         return userRepository.findAll().stream().map(UserResponseDTO::fromEntity).toList();
     }
 
-    @Override @Transactional
+    @Override
     public void deleteUser(UUID id) {
         if (!userRepository.existsById(id)) {
             throw new RecursoNaoEncontradoException("Usuário não encontrado para deleção.");
@@ -76,7 +77,7 @@ public class UserServiceImpl implements UserService {
         userRepository.deleteById(id);
     }
 
-    @Override @Transactional
+    @Override
     public TokenResponseDTO verifyAndAuthenticateFirebaseToken(String firebaseToken) {
         try {
             FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(firebaseToken);
@@ -98,13 +99,11 @@ public class UserServiceImpl implements UserService {
                                     .build())));
             return new TokenResponseDTO(jwtUtil.generateToken(user));
         } catch (Exception e) {
-            throw new RuntimeException("Falha na verificação do token Firebase: " + e.getMessage(), e);
+            throw new BadCredentialsException("Falha na verificação do token Firebase: " + e.getMessage());
         }
     }
 
-    private final com.fiec.br.back_end.kipper.model.service.AuditService auditService;
     @Override
-    @Transactional
     public UserResponseDTO atualizarRole(UUID id, UserRole role) {
         Users user = userRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com ID: " + id));
@@ -112,9 +111,7 @@ public class UserServiceImpl implements UserService {
         user.setRole(role);
         Users salvo = userRepository.save(user);
 
-        // Registra na auditoria
-        Users autor = (Users) org.springframework.security.core.context.SecurityContextHolder
-                .getContext().getAuthentication().getPrincipal();
+        Users autor = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         auditService.registrar("ALTERAR_ROLE",
                 "Alterou role de " + salvo.getName() + ": " + antiga + " → " + role,
                 autor);
@@ -123,20 +120,17 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
-    public void atualizarFcmToken(UUID userId, String fcmToken) {
-        Users user = userRepository.findById(userId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado com ID: " + userId));
+    public void atualizarFcmToken(String email, String fcmToken) {
+        List<Users> usuariosComToken = userRepository.findAllByFcmToken(fcmToken);
+        for (Users u : usuariosComToken) {
+            if (!u.getEmail().equals(email)) {
+                u.setFcmToken(null);
+                userRepository.save(u);
+            }
+        }
 
-        // Cada aparelho tem um único token FCM. Se outra conta já tinha feito login neste
-        // aparelho, o token é retirado dela para que as notificações não cheguem à pessoa errada.
-        userRepository.findAllByFcmToken(fcmToken).stream()
-                .filter(outro -> !outro.getId().equals(userId))
-                .forEach(outro -> {
-                    outro.setFcmToken(null);
-                    userRepository.save(outro);
-                });
-
+        Users user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário não encontrado."));
         user.setFcmToken(fcmToken);
         userRepository.save(user);
     }

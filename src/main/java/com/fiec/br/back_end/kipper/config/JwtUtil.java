@@ -33,6 +33,21 @@ public class JwtUtil {
         return claimsResolver.apply(claims);
     }
 
+    public String generateToken(Map<String, Object> claims, @MonotonicNonNull Users user) {
+        if(claims == null){
+            claims = new HashMap<>();
+        }
+        claims.put("id", user.getId().toString());
+        claims.put("email", user.getEmail());
+        return Jwts.builder()
+                .setClaims(claims)
+                .setSubject(user.getUsername())
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
+                .signWith(getSignInKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
     public String generateToken(@MonotonicNonNull Users user) {
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("id", user.getId().toString());

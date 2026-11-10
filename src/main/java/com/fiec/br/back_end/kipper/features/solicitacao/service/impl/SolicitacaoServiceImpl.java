@@ -6,7 +6,6 @@ import com.fiec.br.back_end.kipper.features.solicitacao.model.entities.*;
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.PrioridadeSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.repositories.*;
-import com.fiec.br.back_end.kipper.features.solicitacao.repositories.specification.SolicitacaoSpecification;
 import com.fiec.br.back_end.kipper.features.solicitacao.service.FileStorageService;
 import com.fiec.br.back_end.kipper.features.solicitacao.service.SolicitacaoService;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
@@ -14,9 +13,12 @@ import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import com.fiec.br.back_end.kipper.features.user.service.NotificacaoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
@@ -36,44 +38,67 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     private final MovimentacaoRepository movimentacaoRepository;
     private final FileStorageService fileStorageService;
     private final NotificacaoService notificacaoService;
+    private final MongoTemplate mongoTemplate;
 
     @Override
-    @Transactional(readOnly = true)
     public Page<SolicitacaoResponseDTO> search(SolicitacaoSearchFilterDTO filtro, Pageable pageable) {
-        return solicitacaoRepository
-                .findAll(SolicitacaoSpecification.comFiltros(filtro), pageable)
-                .map(SolicitacaoResponseDTO::fromEntity);
+        Query query = new Query();
+        List<Criteria> criterias = new ArrayList<>();
+
+        if (filtro.id() != null) criterias.add(Criteria.where("id").is(filtro.id()));
+        if (filtro.termo() != null && !filtro.termo().isBlank()) {
+            criterias.add(new Criteria().orOperator(
+                    Criteria.where("titulo").regex(filtro.termo(), "i"),
+                    Criteria.where("descricao").regex(filtro.termo(), "i")
+            ));
+        }
+        if (filtro.status() != null) criterias.add(Criteria.where("status").is(filtro.status()));
+        if (filtro.prioridade() != null) criterias.add(Criteria.where("prioridade").is(filtro.prioridade()));
+        if (filtro.numeroPatrimonio() != null && !filtro.numeroPatrimonio().isBlank()) criterias.add(Criteria.where("numeroPatrimonio").regex(filtro.numeroPatrimonio(), "i"));
+        if (filtro.localizacaoProblema() != null && !filtro.localizacaoProblema().isBlank()) criterias.add(Criteria.where("localizacaoProblema").regex(filtro.localizacaoProblema(), "i"));
+
+        if (filtro.tipoId() != null) criterias.add(Criteria.where("tipo.$id").is(filtro.tipoId()));
+        if (filtro.localId() != null) criterias.add(Criteria.where("local.$id").is(filtro.localId()));
+        if (filtro.setorId() != null) {
+            // "local" é uma referência (DBRef): o Mongo não filtra por campos do documento referenciado.
+            // Por isso buscamos os locais do setor e filtramos pelos IDs deles.
+            List<UUID> locaisDoSetor = localRepository.findBySetorId(filtro.setorId()).stream()
+                    .map(Local::getId).toList();
+            criterias.add(Criteria.where("local.$id").in(locaisDoSetor));
+        }
+        if (filtro.urgente() != null) criterias.add(Criteria.where("urgente").is(filtro.urgente()));
+
+        if (filtro.usuarioSolicitanteIds() != null && !filtro.usuarioSolicitanteIds().isEmpty()) criterias.add(Criteria.where("usuarioSolicitante.$id").in(filtro.usuarioSolicitanteIds()));
+        if (filtro.tecnicoResponsavelIds() != null && !filtro.tecnicoResponsavelIds().isEmpty()) criterias.add(Criteria.where("tecnicoResponsavel.$id").in(filtro.tecnicoResponsavelIds()));
+
+        if (filtro.dataAberturaInicio() != null) criterias.add(Criteria.where("createdAt").gte(filtro.dataAberturaInicio()));
+        if (filtro.dataAberturaFim() != null) criterias.add(Criteria.where("createdAt").lte(filtro.dataAberturaFim()));
+        if (filtro.dataFinalizacaoInicio() != null) criterias.add(Criteria.where("dataFinalizacao").gte(filtro.dataFinalizacaoInicio()));
+        if (filtro.dataFinalizacaoFim() != null) criterias.add(Criteria.where("dataFinalizacao").lte(filtro.dataFinalizacaoFim()));
+
+        if (!criterias.isEmpty()) query.addCriteria(new Criteria().andOperator(criterias.toArray(new Criteria[0])));
+
+        long total = mongoTemplate.count(query, Solicitacao.class);
+        query.with(pageable);
+        List<Solicitacao> solicitacoes = mongoTemplate.find(query, Solicitacao.class);
+        List<SolicitacaoResponseDTO> dtos = solicitacoes.stream().map(SolicitacaoResponseDTO::fromEntity).toList();
+        return new PageImpl<>(dtos, pageable, total);
     }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO create(CreateSolicitacaoRequestDTO dto, UUID usuarioSolicitanteId, List<MultipartFile> anexos) {
-        Users solicitante = userRepository.findById(usuarioSolicitanteId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário solicitante não encontrado."));
-
-        TipoChamado tipo = tipoChamadoRepository.findById(dto.tipoId())
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Tipo de chamado não encontrado."));
-
-        Local local = dto.localId() != null
-                ? localRepository.findById(dto.localId()).orElse(null)
-                : null;
+        Users solicitante = userRepository.findById(usuarioSolicitanteId).orElseThrow(() -> new RecursoNaoEncontradoException("Usuário solicitante não encontrado."));
+        TipoChamado tipo = tipoChamadoRepository.findById(dto.tipoId()).orElseThrow(() -> new RecursoNaoEncontradoException("Tipo de chamado não encontrado."));
+        Local local = dto.localId() != null ? localRepository.findById(dto.localId()).orElse(null) : null;
 
         Solicitacao solicitacao = Solicitacao.builder()
                 .titulo(tipo.getNome() + " - " + dto.localizacaoProblema())
-                .descricao(dto.descricao())
-                .status(StatusSolicitacao.ABERTO)
-                .prioridade(PrioridadeSolicitacao.MEDIA)
-                .tipo(tipo)
-                .local(local)
-                .numeroPatrimonio(dto.numeroPatrimonio())
-                .localizacaoProblema(dto.localizacaoProblema())
-                .usuarioSolicitante(solicitante)
-                .urgente(false)
-                .build();
+                .descricao(dto.descricao()).status(StatusSolicitacao.ABERTO).prioridade(PrioridadeSolicitacao.MEDIA)
+                .tipo(tipo).local(local).numeroPatrimonio(dto.numeroPatrimonio()).localizacaoProblema(dto.localizacaoProblema())
+                .usuarioSolicitante(solicitante).urgente(false).build();
 
         Solicitacao salva = solicitacaoRepository.save(solicitacao);
-        registrarMovimentacao(salva, "Chamado criado",
-                "Aberto por " + solicitante.getName(), solicitante);
+        registrarMovimentacao(salva, "Chamado criado", "Aberto por " + solicitante.getName(), solicitante);
 
         List<AnexoResponseDTO> anexosSalvos = new ArrayList<>();
         if (anexos != null) {
@@ -82,10 +107,7 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
                 String caminho = fileStorageService.salvar(salva.getId(), arquivo);
                 Anexo anexo = Anexo.builder()
                         .nomeArquivo(arquivo.getOriginalFilename() != null ? arquivo.getOriginalFilename() : "arquivo")
-                        .caminhoArmazenado(caminho)
-                        .tipoConteudo(arquivo.getContentType())
-                        .solicitacao(salva)
-                        .build();
+                        .caminhoArmazenado(caminho).tipoConteudo(arquivo.getContentType()).solicitacao(salva).build();
                 anexosSalvos.add(AnexoResponseDTO.fromEntity(anexoRepository.save(anexo)));
             }
         }
@@ -93,60 +115,27 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public SolicitacaoResponseDTO buscarPorId(UUID id) {
-        Solicitacao solicitacao = buscarEntidadePorId(id);
-        return paraRespostaComAnexos(solicitacao);
-    }
-
-    /**
-     * Monta a resposta de um chamado incluindo os anexos. Usado por todas as operações que
-     * devolvem um único chamado: sem isso, a resposta de alterar status, prioridade, técnico,
-     * urgência ou ajudantes vinha com a lista de anexos vazia e o app deixava de exibir as fotos.
-     */
-    private SolicitacaoResponseDTO paraRespostaComAnexos(Solicitacao solicitacao) {
-        List<AnexoResponseDTO> anexos = anexoRepository.findBySolicitacaoId(solicitacao.getId()).stream()
-                .map(AnexoResponseDTO::fromEntity).toList();
-        return SolicitacaoResponseDTO.fromEntity(solicitacao, anexos);
-    }
+    public SolicitacaoResponseDTO buscarPorId(UUID id) { return paraRespostaComAnexos(buscarEntidadePorId(id)); }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO atualizarStatus(UUID id, StatusSolicitacao novoStatus, String motivo, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = userRepository.findById(autorId).orElse(null);
         StatusSolicitacao antigo = solicitacao.getStatus();
-
         solicitacao.setStatus(novoStatus);
+        if (novoStatus == StatusSolicitacao.CONCLUIDO) solicitacao.setDataConclusao(LocalDateTime.now());
+        else if (novoStatus == StatusSolicitacao.FINALIZADA) solicitacao.setDataFinalizacao(LocalDateTime.now());
+        else if (novoStatus == StatusSolicitacao.REJEITADA) { solicitacao.setMotivoRejeicao(motivo); solicitacao.setDataFinalizacao(LocalDateTime.now()); }
 
-        if (novoStatus == StatusSolicitacao.CONCLUIDO) {
-            solicitacao.setDataConclusao(LocalDateTime.now());
-        } else if (novoStatus == StatusSolicitacao.FINALIZADA) {
-            solicitacao.setDataFinalizacao(LocalDateTime.now());
-        } else if (novoStatus == StatusSolicitacao.REJEITADA) {
-            solicitacao.setMotivoRejeicao(motivo);
-            solicitacao.setDataFinalizacao(LocalDateTime.now());
+        registrarMovimentacao(solicitacao, "Status alterado", antigo + " → " + novoStatus + (motivo != null ? " (" + motivo + ")" : ""), autor);
+
+        if (solicitacao.getUsuarioSolicitante() != null && (novoStatus == StatusSolicitacao.CONCLUIDO || novoStatus == StatusSolicitacao.FINALIZADA || novoStatus == StatusSolicitacao.REJEITADA) && (autor == null || !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId()))) {
+            notificacaoService.enviar(solicitacao.getUsuarioSolicitante(), "Atualização no seu chamado", solicitacao.getTitulo() + " agora está: " + novoStatus, solicitacao.getId());
         }
-
-        registrarMovimentacao(solicitacao, "Status alterado",
-                antigo + " → " + novoStatus + (motivo != null ? " (" + motivo + ")" : ""), autor);
-
-        // Notifica o solicitante quando o chamado é finalizado ou rejeitado
-        if (solicitacao.getUsuarioSolicitante() != null
-                && (novoStatus == StatusSolicitacao.CONCLUIDO
-                || novoStatus == StatusSolicitacao.FINALIZADA
-                || novoStatus == StatusSolicitacao.REJEITADA)
-                && (autor == null || !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId()))) {
-            notificacaoService.enviar(solicitacao.getUsuarioSolicitante(),
-                    "Atualização no seu chamado",
-                    solicitacao.getTitulo() + " agora está: " + novoStatus, solicitacao.getId());
-        }
-
         return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO atualizarPrioridade(UUID id, PrioridadeSolicitacao novaPrioridade, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = userRepository.findById(autorId).orElse(null);
@@ -156,72 +145,43 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO atribuirTecnico(UUID id, UUID tecnicoId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users tecnico = userRepository.findById(tecnicoId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Técnico não encontrado: " + tecnicoId));
+        Users tecnico = userRepository.findById(tecnicoId).orElseThrow(() -> new RecursoNaoEncontradoException("Técnico não encontrado: " + tecnicoId));
         Users autor = userRepository.findById(autorId).orElse(null);
-
         solicitacao.setTecnicoResponsavel(tecnico);
-        if (solicitacao.getStatus() == StatusSolicitacao.ABERTO) {
-            solicitacao.setStatus(StatusSolicitacao.EM_ANDAMENTO);
-        }
-        registrarMovimentacao(solicitacao, "Chamado atribuído",
-                autor != null ? autor.getName() + " atribuiu a " + tecnico.getName() : "Atribuído a " + tecnico.getName(), autor);
-
-        // Notifica o técnico
-        notificacaoService.enviar(tecnico,
-                "Novo chamado atribuído",
-                "Você foi atribuído ao chamado: " + solicitacao.getTitulo(), solicitacao.getId());
-
+        if (solicitacao.getStatus() == StatusSolicitacao.ABERTO) solicitacao.setStatus(StatusSolicitacao.EM_ANDAMENTO);
+        registrarMovimentacao(solicitacao, "Chamado atribuído", autor != null ? autor.getName() + " atribuiu a " + tecnico.getName() : "Atribuído a " + tecnico.getName(), autor);
+        notificacaoService.enviar(tecnico, "Novo chamado atribuído", "Você foi atribuído ao chamado: " + solicitacao.getTitulo(), solicitacao.getId());
         return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO marcarUrgente(UUID id, boolean urgente, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = userRepository.findById(autorId).orElse(null);
         solicitacao.setUrgente(urgente);
-        if (urgente) {
-            solicitacao.setPrioridade(PrioridadeSolicitacao.URGENTE);
-        }
-        registrarMovimentacao(solicitacao, urgente ? "Marcado como urgente" : "Urgência removida",
-                autor != null ? "Por " + autor.getName() : null, autor);
-
-        // Notifica o técnico responsável, se houver
-        if (urgente && solicitacao.getTecnicoResponsavel() != null) {
-            notificacaoService.enviar(solicitacao.getTecnicoResponsavel(),
-                    "Chamado marcado como URGENTE",
-                    solicitacao.getTitulo(), solicitacao.getId());
-        }
-
+        if (urgente) solicitacao.setPrioridade(PrioridadeSolicitacao.URGENTE);
+        registrarMovimentacao(solicitacao, urgente ? "Marcado como urgente" : "Urgência removida", autor != null ? "Por " + autor.getName() : null, autor);
+        if (urgente && solicitacao.getTecnicoResponsavel() != null) notificacaoService.enviar(solicitacao.getTecnicoResponsavel(), "Chamado marcado como URGENTE", solicitacao.getTitulo(), solicitacao.getId());
         return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO adicionarAjudante(UUID id, UUID ajudanteId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users ajudante = userRepository.findById(ajudanteId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Ajudante não encontrado."));
+        Users ajudante = userRepository.findById(ajudanteId).orElseThrow(() -> new RecursoNaoEncontradoException("Ajudante não encontrado."));
         Users autor = userRepository.findById(autorId).orElse(null);
-
         if (solicitacao.getAjudantes() == null) solicitacao.setAjudantes(new ArrayList<>());
         if (solicitacao.getAjudantes().stream().noneMatch(u -> u.getId().equals(ajudanteId))) {
             solicitacao.getAjudantes().add(ajudante);
             registrarMovimentacao(solicitacao, "Ajudante adicionado", ajudante.getName(), autor);
-
-            notificacaoService.enviar(ajudante,
-                    "Você foi adicionado como ajudante",
-                    solicitacao.getTitulo(), solicitacao.getId());
+            notificacaoService.enviar(ajudante, "Você foi adicionado como ajudante", solicitacao.getTitulo(), solicitacao.getId());
         }
         return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
     @Override
-    @Transactional
     public SolicitacaoResponseDTO removerAjudante(UUID id, UUID ajudanteId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = userRepository.findById(autorId).orElse(null);
@@ -232,96 +192,58 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
     }
 
-    @Override
-    @Transactional
-    public SolicitacaoResponseDTO concluir(UUID id, UUID autorId) {
-        return atualizarStatus(id, StatusSolicitacao.CONCLUIDO, null, autorId);
-    }
+    @Override public SolicitacaoResponseDTO concluir(UUID id, UUID autorId) { return atualizarStatus(id, StatusSolicitacao.CONCLUIDO, null, autorId); }
+    @Override public SolicitacaoResponseDTO validarFinalizacao(UUID id, UUID autorId) { return atualizarStatus(id, StatusSolicitacao.FINALIZADA, null, autorId); }
+    @Override public SolicitacaoResponseDTO rejeitar(UUID id, String motivo, UUID autorId) { return atualizarStatus(id, StatusSolicitacao.REJEITADA, motivo, autorId); }
 
     @Override
-    @Transactional
-    public SolicitacaoResponseDTO validarFinalizacao(UUID id, UUID autorId) {
-        return atualizarStatus(id, StatusSolicitacao.FINALIZADA, null, autorId);
-    }
-
-    @Override
-    @Transactional
-    public SolicitacaoResponseDTO rejeitar(UUID id, String motivo, UUID autorId) {
-        return atualizarStatus(id, StatusSolicitacao.REJEITADA, motivo, autorId);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
     public List<ComentarioResponseDTO> listarComentarios(UUID solicitacaoId) {
-        return comentarioRepository.findBySolicitacaoIdOrderByCreatedAtAsc(solicitacaoId)
-                .stream().map(ComentarioResponseDTO::fromEntity).toList();
+        return comentarioRepository.findBySolicitacaoIdOrderByCreatedAtAsc(solicitacaoId).stream().map(ComentarioResponseDTO::fromEntity).toList();
     }
 
     @Override
-    @Transactional
     public ComentarioResponseDTO adicionarComentario(UUID solicitacaoId, String texto, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(solicitacaoId);
-        Users autor = userRepository.findById(autorId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Autor não encontrado."));
+        Users autor = userRepository.findById(autorId).orElseThrow(() -> new RecursoNaoEncontradoException("Autor não encontrado."));
         Comentario c = Comentario.builder().texto(texto).autor(autor).solicitacao(solicitacao).build();
         registrarMovimentacao(solicitacao, "Comentário adicionado", autor.getName() + ": " + texto, autor);
-
-        // Notifica o solicitante, se quem comentou não for ele mesmo
-        if (solicitacao.getUsuarioSolicitante() != null
-                && !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId())) {
-            notificacaoService.enviar(solicitacao.getUsuarioSolicitante(),
-                    "Novo comentário no seu chamado",
-                    autor.getName() + ": " + texto, solicitacao.getId());
+        if (solicitacao.getUsuarioSolicitante() != null && !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId())) {
+            notificacaoService.enviar(solicitacao.getUsuarioSolicitante(), "Novo comentário no seu chamado", autor.getName() + ": " + texto, solicitacao.getId());
         }
-
         return ComentarioResponseDTO.fromEntity(comentarioRepository.save(c));
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<MovimentacaoResponseDTO> listarMovimentacoes(UUID solicitacaoId) {
-        return movimentacaoRepository.findBySolicitacaoIdOrderByCreatedAtDesc(solicitacaoId)
-                .stream().map(MovimentacaoResponseDTO::fromEntity).toList();
+        return movimentacaoRepository.findBySolicitacaoIdOrderByCreatedAtDesc(solicitacaoId).stream().map(MovimentacaoResponseDTO::fromEntity).toList();
     }
 
     @Override
-    @Transactional(readOnly = true)
     public RelatorioDTO gerarRelatorio(LocalDateTime inicio, LocalDateTime fim) {
-        List<Solicitacao> lista = (inicio != null && fim != null)
-                ? solicitacaoRepository.findByPeriodo(inicio, fim)
-                : solicitacaoRepository.findAll();
-
+        List<Solicitacao> lista = (inicio != null && fim != null) ? solicitacaoRepository.findByPeriodo(inicio, fim) : solicitacaoRepository.findAll();
         long total = lista.size();
         long rejeitados = lista.stream().filter(s -> s.getStatus() == StatusSolicitacao.REJEITADA).count();
-
-        double tempoMedio = lista.stream()
-                .filter(s -> s.getDataFinalizacao() != null && s.getCreatedAt() != null)
-                .mapToLong(s -> Duration.between(s.getCreatedAt(), s.getDataFinalizacao()).toHours())
-                .average().orElse(0) / 24.0;
-
+        double tempoMedio = lista.stream().filter(s -> s.getDataFinalizacao() != null && s.getCreatedAt() != null)
+                .mapToLong(s -> Duration.between(s.getCreatedAt(), s.getDataFinalizacao()).toHours()).average().orElse(0) / 24.0;
         Map<String, Long> contagemTipo = new HashMap<>();
-        for (Solicitacao s : lista) {
-            if (s.getTipo() != null) {
-                contagemTipo.merge(s.getTipo().getNome(), 1L, Long::sum);
-            }
-        }
-        String tipoMaisFreq = contagemTipo.entrySet().stream()
-                .max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("-");
+        for (Solicitacao s : lista) { if (s.getTipo() != null) contagemTipo.merge(s.getTipo().getNome(), 1L, Long::sum); }
+        String tipoMaisFreq = contagemTipo.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("-");
         long tipoQtd = contagemTipo.getOrDefault(tipoMaisFreq, 0L);
-
         double percRej = total > 0 ? (rejeitados * 100.0 / total) : 0;
-
         return new RelatorioDTO(total, tempoMedio, tipoMaisFreq, tipoQtd, rejeitados, percRej);
     }
 
     private Solicitacao buscarEntidadePorId(UUID id) {
-        return solicitacaoRepository.findById(id)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação não encontrada com ID: " + id));
+        return solicitacaoRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação não encontrada com ID: " + id));
     }
 
     private void registrarMovimentacao(Solicitacao s, String titulo, String descricao, Users autor) {
-        Movimentacao m = Movimentacao.builder()
-                .titulo(titulo).descricao(descricao).autor(autor).solicitacao(s).build();
+        Movimentacao m = Movimentacao.builder().titulo(titulo).descricao(descricao).autor(autor).solicitacao(s).build();
         movimentacaoRepository.save(m);
+    }
+
+    private SolicitacaoResponseDTO paraRespostaComAnexos(Solicitacao solicitacao) {
+        List<AnexoResponseDTO> anexos = anexoRepository.findBySolicitacaoId(solicitacao.getId()).stream().map(AnexoResponseDTO::fromEntity).toList();
+        return SolicitacaoResponseDTO.fromEntity(solicitacao, anexos);
     }
 }

@@ -16,7 +16,6 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -72,7 +71,6 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    @Transactional
     public TokenResponseDTO loginComGoogle(GoogleTokenRequestDTO request) {
         GoogleIdToken idToken;
         try {
@@ -89,30 +87,27 @@ public class AuthServiceImpl implements AuthService {
         GoogleIdToken.Payload payload = idToken.getPayload();
         String email = payload.getEmail();
         String nome = (String) payload.get("name");
-        String sub = payload.getSubject(); // id único do Google (equivalente ao firebaseUid)
+        String sub = payload.getSubject();
 
         if (email == null || email.isBlank()) {
             throw new BadCredentialsException("Token do Google não contém e-mail.");
         }
 
-        // Procura usuário por email OU por firebaseUid (que reusamos para o Google sub)
         Optional<Users> userOpt = userRepository.findByFirebaseUid(sub)
                 .or(() -> userRepository.findByEmail(email));
 
         Users user;
         if (userOpt.isPresent()) {
             user = userOpt.get();
-            // Garante que o firebaseUid está preenchido com o sub do Google
             if (user.getFirebaseUid() == null || !user.getFirebaseUid().equals(sub)) {
                 user.setFirebaseUid(sub);
                 userRepository.save(user);
             }
         } else {
-            // Auto-cadastro
             user = Users.builder()
                     .name(nome != null ? nome : "Usuário Google")
                     .email(email)
-                    .password(passwordEncoder.encode(UUID.randomUUID().toString())) // senha aleatória
+                    .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                     .firebaseUid(sub)
                     .build();
             userRepository.save(user);
