@@ -12,7 +12,8 @@ import java.util.Collections;
 @Configuration
 public class GoogleAuthConfig {
 
-    @Value("${app.oauth2.redirect-uri}")
+    // CORREÇÃO: estava injetando ${app.oauth2.redirect-uri} por engano no merge
+    @Value("${app.google.web-client-id}")
     private String webClientId;
 
     @Bean

@@ -1,12 +1,14 @@
 spring:
   application:
     name: kipper
-
-  mongodb:
-    # AQUI ESTÁ A CONEXÃO DA NUVEM DA FIEC
-    uri: mongodb+srv://fillipesilva:Fiec2026@tigrinhos-fiec.xkgx0de.mongodb.net/kipper_db?retryWrites=true&w=majority
-    auto-index-creation: true
-    uuid-representation: standard
+  data:
+    mongodb:
+      # Para entregar ao professor, use a URI do Atlas:
+      # uri: mongodb+srv://fillipesilva:Fiec2026@tigrinhos-fiec.xkgx0de.mongodb.net/kipper_db?retryWrites=true&w=majority
+      # Para testar localmente, use a URI local:
+      uri: mongodb://localhost:27017/kipper_db
+      auto-index-creation: true
+      uuid-representation: standard
   servlet:
     multipart:
       enabled: true
@@ -42,7 +44,7 @@ management:
           include: livenessState
         readiness:
           include: readinessState,mongo
-  m]etrics:
+  metrics:
     tags:
       application: ${spring.application.name}
 springdoc:
