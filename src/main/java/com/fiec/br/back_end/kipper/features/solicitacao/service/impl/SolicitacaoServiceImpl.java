@@ -59,7 +59,13 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
 
         if (filtro.tipoId() != null) criterias.add(Criteria.where("tipo.$id").is(filtro.tipoId()));
         if (filtro.localId() != null) criterias.add(Criteria.where("local.$id").is(filtro.localId()));
-        if (filtro.setorId() != null) criterias.add(Criteria.where("local.setor.$id").is(filtro.setorId()));
+        if (filtro.setorId() != null) {
+            // "local" é uma referência (DBRef): o Mongo não filtra por campos do documento referenciado.
+            // Por isso buscamos os locais do setor e filtramos pelos IDs deles.
+            List<UUID> locaisDoSetor = localRepository.findBySetorId(filtro.setorId()).stream()
+                    .map(Local::getId).toList();
+            criterias.add(Criteria.where("local.$id").in(locaisDoSetor));
+        }
         if (filtro.urgente() != null) criterias.add(Criteria.where("urgente").is(filtro.urgente()));
 
         if (filtro.usuarioSolicitanteIds() != null && !filtro.usuarioSolicitanteIds().isEmpty()) criterias.add(Criteria.where("usuarioSolicitante.$id").in(filtro.usuarioSolicitanteIds()));

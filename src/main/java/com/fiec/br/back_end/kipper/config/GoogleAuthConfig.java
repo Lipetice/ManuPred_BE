@@ -12,7 +12,9 @@ import java.util.Collections;
 @Configuration
 public class GoogleAuthConfig {
 
-    @Value("${app.oauth2.redirect-uri}")
+    // Client ID do tipo "Web" do Google (projeto kipper-56bb0). É o mesmo usado pelo app Android
+    // (serverClientId do Credential Manager) e pelo site: o idToken precisa ter este "aud".
+    @Value("${app.google.web-client-id}")
     private String webClientId;
 
     @Bean

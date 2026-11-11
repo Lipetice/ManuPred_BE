@@ -3,8 +3,8 @@ spring:
     name: kipper
 
   mongodb:
-    # AQUI ESTÁ A CONEXÃO DA NUVEM DA FIEC
-    uri: mongodb+srv://fillipesilva:Fiec2026@tigrinhos-fiec.xkgx0de.mongodb.net/kipper_db?retryWrites=true&w=majority
+    # Conexão da nuvem (Atlas): defina a variável de ambiente MONGODB_URI. Nunca coloque a senha aqui.
+    uri: ${MONGODB_URI:mongodb://localhost:27017/kipper_db}
     auto-index-creation: true
     uuid-representation: standard
   servlet:
@@ -18,7 +18,7 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com}
+            client-id: ${GOOGLE_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope:
               - openid
@@ -42,7 +42,7 @@ management:
           include: livenessState
         readiness:
           include: readinessState,mongo
-  m]etrics:
+  metrics:
     tags:
       application: ${spring.application.name}
 springdoc:
@@ -67,7 +67,7 @@ app:
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
     generated-file-path: ${FIREBASE_CREDENTIALS_PATH:/tmp/firebase-service-account.json}
   google:
-    web-client-id: ${GOOGLE_WEB_CLIENT_ID:99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com}
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
   oauth2:
     redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:5173/oauth2/redirect}
   ia:
