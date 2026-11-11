@@ -1,33 +1,27 @@
 spring:
   application:
     name: kipper
-  datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3310}/kipper_db?createDatabaseIfNotExist=true
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:1234}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.MySQLDialect
+
+  mongodb:
+    # AQUI ESTÁ A CONEXÃO DA NUVEM DA FIEC
+    uri: mongodb+srv://fillipesilva:Fiec2026@tigrinhos-fiec.xkgx0de.mongodb.net/kipper_db?retryWrites=true&w=majority
+    representation:
+      uuid: standard
+  data:
+    mongodb:
+      auto-index-creation: true
   servlet:
     multipart:
       enabled: true
       max-file-size: 10MB
       max-request-size: 10MB
       resolve-lazily: false
-
-  # Configuração OAuth2
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID}
+            client-id: ${GOOGLE_CLIENT_ID:99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope:
               - openid
@@ -50,7 +44,7 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,db
+          include: readinessState,mongo
   metrics:
     tags:
       application: ${spring.application.name}
@@ -75,6 +69,13 @@ app:
   firebase:
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
     generated-file-path: ${FIREBASE_CREDENTIALS_PATH:/tmp/firebase-service-account.json}
-
+  google:
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com}
   oauth2:
-    redirect-uri: http://localhost:5173/oauth2/redirect
+    redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:5173/oauth2/redirect}
+  ia:
+    provedor: ${IA_PROVEDOR:gemini}
+    api-key: ${IA_API_KEY:}
+    modelo: ${IA_MODELO:gemini-2.5-flash}
+    timeout-segundos: ${IA_TIMEOUT:20}
+    limite-por-minuto: ${IA_LIMITE_MINUTO:10}

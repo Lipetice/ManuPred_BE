@@ -6,7 +6,8 @@ kind: ConfigMap
 metadata:
   name: backend-config
 data:
-  DB_HOST: "host.minikube.internal" # Conecta ao banco de dados no host local
+  # CORREÇÃO: Variável de ambiente alterada para MongoDB
+  MONGODB_URI: "mongodb://host.minikube.internal:27017/kipper_db"
   SPRING_PROFILES_ACTIVE: "prod"
 ---
 # ========================================================
@@ -19,7 +20,7 @@ metadata:
   labels:
     app: backend
 spec:
-  replicas: 2 # Replicação gerenciada pelo Deployment (ReplicaSet)
+  replicas: 2
   selector:
     matchLabels:
       app: backend
@@ -29,28 +30,28 @@ spec:
         app: backend
     spec:
       containers:
-      - name: backend-container
-        image: thiagofiec/manupred_be:latest # Substitua pelo seu usuário no Docker Hub
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8080 # Porta padrão da aplicação Spring Boot
-        envFrom:
-        - configMapRef:
-            name: backend-config
-        env:
-          - name: FIREBASE_CONFIG_JSON
-            valueFrom:
-              secretKeyRef:
-                name: firebase-secret
-                key: service-account.json
+        - name: backend-container
+          image: thiagofiec/manupred_be:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: FIREBASE_CREDENTIALS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: firebase-secret
+                  key: service-account.json
 
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "256Mi"
-          limits:
-            cpu: "500m"
-            memory: "512Mi"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
 ---
 # ========================================================
 # 3. SERVICE DO BACKEND (ClusterIP para comunicação interna)
@@ -60,7 +61,7 @@ kind: Service
 metadata:
   name: backend-service
 spec:
-  type: ClusterIP # Exposição apenas interna no cluster K8s
+  type: ClusterIP
   selector:
     app: backend
   ports:
@@ -83,9 +84,9 @@ spec:
   minReplicas: 1
   maxReplicas: 5
   metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

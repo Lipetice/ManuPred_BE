@@ -1,9 +1,5 @@
 package com.fiec.br.back_end.kipper.config;
 
-
-
-
-
 import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
