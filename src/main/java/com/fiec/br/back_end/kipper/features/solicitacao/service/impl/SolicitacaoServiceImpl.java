@@ -8,6 +8,7 @@ import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolici
 import com.fiec.br.back_end.kipper.features.solicitacao.repositories.*;
 import com.fiec.br.back_end.kipper.features.solicitacao.service.FileStorageService;
 import com.fiec.br.back_end.kipper.features.solicitacao.service.SolicitacaoService;
+import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import com.fiec.br.back_end.kipper.features.user.service.NotificacaoService;
@@ -18,16 +19,27 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class SolicitacaoServiceImpl implements SolicitacaoService {
+
+    /** Status que encerram o chamado. Depois deles, só ADMIN consegue mexer (reabrir). */
+    private static final Set<StatusSolicitacao> STATUS_FINAIS = EnumSet.of(
+            StatusSolicitacao.FINALIZADA, StatusSolicitacao.REJEITADA, StatusSolicitacao.CANCELADO);
+
+    /** Mudanças de status que geram notificação push para os envolvidos. */
+    private static final Set<StatusSolicitacao> STATUS_QUE_NOTIFICAM = EnumSet.of(
+            StatusSolicitacao.CONCLUIDO, StatusSolicitacao.FINALIZADA,
+            StatusSolicitacao.REJEITADA, StatusSolicitacao.CANCELADO);
 
     private final SolicitacaoRepository solicitacaoRepository;
     private final AnexoRepository anexoRepository;
@@ -40,22 +52,26 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     private final NotificacaoService notificacaoService;
     private final MongoTemplate mongoTemplate;
 
+    // =====================================================================
+    // BUSCA
+    // =====================================================================
+
     @Override
     public Page<SolicitacaoResponseDTO> search(SolicitacaoSearchFilterDTO filtro, Pageable pageable) {
         Query query = new Query();
         List<Criteria> criterias = new ArrayList<>();
 
         if (filtro.id() != null) criterias.add(Criteria.where("id").is(filtro.id()));
-        if (filtro.termo() != null && !filtro.termo().isBlank()) {
+        if (temTexto(filtro.termo())) {
             criterias.add(new Criteria().orOperator(
-                    Criteria.where("titulo").regex(filtro.termo(), "i"),
-                    Criteria.where("descricao").regex(filtro.termo(), "i")
+                    Criteria.where("titulo").regex(textoLiteral(filtro.termo()), "i"),
+                    Criteria.where("descricao").regex(textoLiteral(filtro.termo()), "i")
             ));
         }
         if (filtro.status() != null) criterias.add(Criteria.where("status").is(filtro.status()));
         if (filtro.prioridade() != null) criterias.add(Criteria.where("prioridade").is(filtro.prioridade()));
-        if (filtro.numeroPatrimonio() != null && !filtro.numeroPatrimonio().isBlank()) criterias.add(Criteria.where("numeroPatrimonio").regex(filtro.numeroPatrimonio(), "i"));
-        if (filtro.localizacaoProblema() != null && !filtro.localizacaoProblema().isBlank()) criterias.add(Criteria.where("localizacaoProblema").regex(filtro.localizacaoProblema(), "i"));
+        if (temTexto(filtro.numeroPatrimonio())) criterias.add(Criteria.where("numeroPatrimonio").regex(textoLiteral(filtro.numeroPatrimonio()), "i"));
+        if (temTexto(filtro.localizacaoProblema())) criterias.add(Criteria.where("localizacaoProblema").regex(textoLiteral(filtro.localizacaoProblema()), "i"));
 
         if (filtro.tipoId() != null) criterias.add(Criteria.where("tipo.$id").is(filtro.tipoId()));
         if (filtro.localId() != null) criterias.add(Criteria.where("local.$id").is(filtro.localId()));
@@ -85,11 +101,41 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return new PageImpl<>(dtos, pageable, total);
     }
 
+    private boolean temTexto(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /**
+     * O texto digitado pelo usuário (ou devolvido pela IA) vai para um regex do Mongo.
+     * Sem escapar, uma busca por "sala (2" ou "c++" gerava regex inválido e erro 500.
+     * Pattern.quote faz o texto ser tratado literalmente.
+     */
+    private String textoLiteral(String texto) {
+        return Pattern.quote(texto.trim());
+    }
+
+    // =====================================================================
+    // CRIAÇÃO
+    // =====================================================================
+
     @Override
     public SolicitacaoResponseDTO create(CreateSolicitacaoRequestDTO dto, UUID usuarioSolicitanteId, List<MultipartFile> anexos) {
-        Users solicitante = userRepository.findById(usuarioSolicitanteId).orElseThrow(() -> new RecursoNaoEncontradoException("Usuário solicitante não encontrado."));
-        TipoChamado tipo = tipoChamadoRepository.findById(dto.tipoId()).orElseThrow(() -> new RecursoNaoEncontradoException("Tipo de chamado não encontrado."));
-        Local local = dto.localId() != null ? localRepository.findById(dto.localId()).orElse(null) : null;
+        if (dto.tipoId() == null) throw new IllegalArgumentException("O tipo do chamado é obrigatório.");
+
+        Users solicitante = buscarUsuario(usuarioSolicitanteId, "Usuário solicitante não encontrado.");
+        TipoChamado tipo = tipoChamadoRepository.findById(dto.tipoId())
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Tipo de chamado não encontrado."));
+        // Antes, um localId inexistente era ignorado em silêncio e o chamado ficava sem local.
+        Local local = dto.localId() != null
+                ? localRepository.findById(dto.localId())
+                        .orElseThrow(() -> new RecursoNaoEncontradoException("Local não encontrado."))
+                : null;
+
+        // Valida TODOS os anexos antes de gravar qualquer coisa. Antes, um arquivo recusado
+        // devolvia erro 400 mas o chamado já tinha sido salvo (e o usuário criava outro).
+        List<MultipartFile> arquivos = anexos == null ? List.of()
+                : anexos.stream().filter(a -> a != null && !a.isEmpty()).toList();
+        arquivos.forEach(fileStorageService::validar);
 
         Solicitacao solicitacao = Solicitacao.builder()
                 .titulo(tipo.getNome() + " - " + dto.localizacaoProblema())
@@ -101,15 +147,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         registrarMovimentacao(salva, "Chamado criado", "Aberto por " + solicitante.getName(), solicitante);
 
         List<AnexoResponseDTO> anexosSalvos = new ArrayList<>();
-        if (anexos != null) {
-            for (MultipartFile arquivo : anexos) {
-                if (arquivo == null || arquivo.isEmpty()) continue;
-                String caminho = fileStorageService.salvar(salva.getId(), arquivo);
-                Anexo anexo = Anexo.builder()
-                        .nomeArquivo(arquivo.getOriginalFilename() != null ? arquivo.getOriginalFilename() : "arquivo")
-                        .caminhoArmazenado(caminho).tipoConteudo(arquivo.getContentType()).solicitacao(salva).build();
-                anexosSalvos.add(AnexoResponseDTO.fromEntity(anexoRepository.save(anexo)));
-            }
+        for (MultipartFile arquivo : arquivos) {
+            String caminho = fileStorageService.salvar(salva.getId(), arquivo);
+            Anexo anexo = Anexo.builder()
+                    .nomeArquivo(arquivo.getOriginalFilename() != null ? arquivo.getOriginalFilename() : "arquivo")
+                    .caminhoArmazenado(caminho).tipoConteudo(arquivo.getContentType()).solicitacao(salva).build();
+            anexosSalvos.add(AnexoResponseDTO.fromEntity(anexoRepository.save(anexo)));
         }
         return SolicitacaoResponseDTO.fromEntity(salva, anexosSalvos);
     }
@@ -117,84 +160,204 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     @Override
     public SolicitacaoResponseDTO buscarPorId(UUID id) { return paraRespostaComAnexos(buscarEntidadePorId(id)); }
 
+    // =====================================================================
+    // STATUS
+    // =====================================================================
+
+    /** Endpoint genérico PATCH /{id}/status (equipe). */
     @Override
     public SolicitacaoResponseDTO atualizarStatus(UUID id, StatusSolicitacao novoStatus, String motivo, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users autor = userRepository.findById(autorId).orElse(null);
-        StatusSolicitacao antigo = solicitacao.getStatus();
-        solicitacao.setStatus(novoStatus);
-        if (novoStatus == StatusSolicitacao.CONCLUIDO) solicitacao.setDataConclusao(LocalDateTime.now());
-        else if (novoStatus == StatusSolicitacao.FINALIZADA) solicitacao.setDataFinalizacao(LocalDateTime.now());
-        else if (novoStatus == StatusSolicitacao.REJEITADA) { solicitacao.setMotivoRejeicao(motivo); solicitacao.setDataFinalizacao(LocalDateTime.now()); }
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+        verificarPodeAtuar(autor, solicitacao);
 
-        registrarMovimentacao(solicitacao, "Status alterado", antigo + " → " + novoStatus + (motivo != null ? " (" + motivo + ")" : ""), autor);
-
-        if (solicitacao.getUsuarioSolicitante() != null && (novoStatus == StatusSolicitacao.CONCLUIDO || novoStatus == StatusSolicitacao.FINALIZADA || novoStatus == StatusSolicitacao.REJEITADA) && (autor == null || !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId()))) {
-            notificacaoService.enviar(solicitacao.getUsuarioSolicitante(), "Atualização no seu chamado", solicitacao.getTitulo() + " agora está: " + novoStatus, solicitacao.getId());
+        // Finalizar é a confirmação do SOLICITANTE (/validar). Sem esta trava, qualquer
+        // funcionário finalizava o próprio serviço e pulava a validação.
+        if (novoStatus == StatusSolicitacao.FINALIZADA && !isAdmin(autor)) {
+            throw new AccessDeniedException("A finalização é feita pelo solicitante, ao validar o chamado.");
         }
-        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
+        return mudarStatus(solicitacao, novoStatus, motivo, autor);
     }
+
+    @Override
+    public SolicitacaoResponseDTO concluir(UUID id, UUID autorId) {
+        Solicitacao solicitacao = buscarEntidadePorId(id);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+        verificarPodeAtuar(autor, solicitacao);
+        return mudarStatus(solicitacao, StatusSolicitacao.CONCLUIDO, null, autor);
+    }
+
+    /** Quem pode chamar (solicitante ou admin) é verificado no controller. */
+    @Override
+    public SolicitacaoResponseDTO validarFinalizacao(UUID id, UUID autorId) {
+        Solicitacao solicitacao = buscarEntidadePorId(id);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+        return mudarStatus(solicitacao, StatusSolicitacao.FINALIZADA, null, autor);
+    }
+
+    /** Quem pode chamar (solicitante, supervisor ou admin) é verificado no controller. */
+    @Override
+    public SolicitacaoResponseDTO rejeitar(UUID id, String motivo, UUID autorId) {
+        if (!temTexto(motivo)) throw new IllegalArgumentException("Informe o motivo da rejeição.");
+        Solicitacao solicitacao = buscarEntidadePorId(id);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+        return mudarStatus(solicitacao, StatusSolicitacao.REJEITADA, motivo.trim(), autor);
+    }
+
+    private SolicitacaoResponseDTO mudarStatus(Solicitacao solicitacao, StatusSolicitacao novoStatus, String motivo, Users autor) {
+        StatusSolicitacao antigo = solicitacao.getStatus();
+        validarTransicao(antigo, novoStatus, autor);
+
+        LocalDateTime agora = LocalDateTime.now();
+        solicitacao.setStatus(novoStatus);
+        switch (novoStatus) {
+            case CONCLUIDO -> solicitacao.setDataConclusao(agora);
+            case FINALIZADA -> solicitacao.setDataFinalizacao(agora);
+            case REJEITADA -> {
+                solicitacao.setMotivoRejeicao(motivo);
+                solicitacao.setDataFinalizacao(agora);
+            }
+            case CANCELADO -> { /* mantém as datas como estão */ }
+            default -> {
+                // Voltou para um status "em aberto" (ex.: reaberto): limpa os dados de encerramento
+                solicitacao.setDataConclusao(null);
+                solicitacao.setDataFinalizacao(null);
+                solicitacao.setMotivoRejeicao(null);
+            }
+        }
+
+        Solicitacao salva = solicitacaoRepository.save(solicitacao);
+        registrarMovimentacao(salva, "Status alterado",
+                antigo + " → " + novoStatus + (temTexto(motivo) ? " (" + motivo.trim() + ")" : ""), autor);
+
+        if (STATUS_QUE_NOTIFICAM.contains(novoStatus)) {
+            notificarEnvolvidos(salva, autor, "Atualização no chamado", salva.getTitulo() + " agora está: " + novoStatus);
+        }
+        return paraRespostaComAnexos(salva);
+    }
+
+    /**
+     * Regras de mudança de status:
+     *  - não pode "mudar" para o status em que já está;
+     *  - chamado encerrado (FINALIZADA, REJEITADA, CANCELADO) só é alterado por ADMIN;
+     *  - FINALIZADA só a partir de CONCLUIDO (o técnico conclui, o solicitante valida).
+     */
+    private void validarTransicao(StatusSolicitacao antigo, StatusSolicitacao novo, Users autor) {
+        if (novo == null) throw new IllegalArgumentException("O novo status é obrigatório.");
+        if (antigo == novo) {
+            throw new IllegalArgumentException("O chamado já está com o status " + novo + ".");
+        }
+        if (antigo != null && STATUS_FINAIS.contains(antigo) && !isAdmin(autor)) {
+            throw new IllegalArgumentException("Este chamado já foi encerrado (" + antigo + "). Apenas um ADMIN pode reabri-lo.");
+        }
+        if (novo == StatusSolicitacao.FINALIZADA && antigo != StatusSolicitacao.CONCLUIDO) {
+            throw new IllegalArgumentException("Só é possível finalizar um chamado que está CONCLUIDO.");
+        }
+    }
+
+    // =====================================================================
+    // PRIORIDADE, TÉCNICO, URGÊNCIA, AJUDANTES
+    // =====================================================================
 
     @Override
     public SolicitacaoResponseDTO atualizarPrioridade(UUID id, PrioridadeSolicitacao novaPrioridade, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users autor = userRepository.findById(autorId).orElse(null);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
         solicitacao.setPrioridade(novaPrioridade);
-        registrarMovimentacao(solicitacao, "Prioridade alterada", "Nova prioridade: " + novaPrioridade, autor);
-        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
+        Solicitacao salva = solicitacaoRepository.save(solicitacao);
+        registrarMovimentacao(salva, "Prioridade alterada", "Nova prioridade: " + novaPrioridade, autor);
+        return paraRespostaComAnexos(salva);
     }
 
     @Override
     public SolicitacaoResponseDTO atribuirTecnico(UUID id, UUID tecnicoId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users tecnico = userRepository.findById(tecnicoId).orElseThrow(() -> new RecursoNaoEncontradoException("Técnico não encontrado: " + tecnicoId));
-        Users autor = userRepository.findById(autorId).orElse(null);
+        Users tecnico = buscarUsuario(tecnicoId, "Técnico não encontrado: " + tecnicoId);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+
+        verificarChamadoEmAberto(solicitacao);
+        // Antes dava para atribuir o chamado a um usuário comum (USER_ROLE), que não tem
+        // permissão para concluir: o chamado ficava travado.
+        if (!isEquipe(tecnico)) {
+            throw new IllegalArgumentException(tecnico.getName() + " não é funcionário e não pode ser técnico de um chamado.");
+        }
+
         solicitacao.setTecnicoResponsavel(tecnico);
         if (solicitacao.getStatus() == StatusSolicitacao.ABERTO) solicitacao.setStatus(StatusSolicitacao.EM_ANDAMENTO);
-        registrarMovimentacao(solicitacao, "Chamado atribuído", autor != null ? autor.getName() + " atribuiu a " + tecnico.getName() : "Atribuído a " + tecnico.getName(), autor);
-        notificacaoService.enviar(tecnico, "Novo chamado atribuído", "Você foi atribuído ao chamado: " + solicitacao.getTitulo(), solicitacao.getId());
-        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
+        Solicitacao salva = solicitacaoRepository.save(solicitacao);
+
+        registrarMovimentacao(salva, "Chamado atribuído", autor.getName() + " atribuiu a " + tecnico.getName(), autor);
+        if (!tecnico.getId().equals(autor.getId())) {
+            notificacaoService.enviar(tecnico, "Novo chamado atribuído", "Você foi atribuído ao chamado: " + salva.getTitulo(), salva.getId());
+        }
+        return paraRespostaComAnexos(salva);
     }
 
     @Override
     public SolicitacaoResponseDTO marcarUrgente(UUID id, boolean urgente, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users autor = userRepository.findById(autorId).orElse(null);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
         solicitacao.setUrgente(urgente);
         if (urgente) solicitacao.setPrioridade(PrioridadeSolicitacao.URGENTE);
-        registrarMovimentacao(solicitacao, urgente ? "Marcado como urgente" : "Urgência removida", autor != null ? "Por " + autor.getName() : null, autor);
-        if (urgente && solicitacao.getTecnicoResponsavel() != null) notificacaoService.enviar(solicitacao.getTecnicoResponsavel(), "Chamado marcado como URGENTE", solicitacao.getTitulo(), solicitacao.getId());
-        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
+        Solicitacao salva = solicitacaoRepository.save(solicitacao);
+
+        registrarMovimentacao(salva, urgente ? "Marcado como urgente" : "Urgência removida", "Por " + autor.getName(), autor);
+        if (urgente && salva.getTecnicoResponsavel() != null && !salva.getTecnicoResponsavel().getId().equals(autor.getId())) {
+            notificacaoService.enviar(salva.getTecnicoResponsavel(), "Chamado marcado como URGENTE", salva.getTitulo(), salva.getId());
+        }
+        return paraRespostaComAnexos(salva);
     }
 
     @Override
     public SolicitacaoResponseDTO adicionarAjudante(UUID id, UUID ajudanteId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users ajudante = userRepository.findById(ajudanteId).orElseThrow(() -> new RecursoNaoEncontradoException("Ajudante não encontrado."));
-        Users autor = userRepository.findById(autorId).orElse(null);
-        if (solicitacao.getAjudantes() == null) solicitacao.setAjudantes(new ArrayList<>());
-        if (solicitacao.getAjudantes().stream().noneMatch(u -> u.getId().equals(ajudanteId))) {
-            solicitacao.getAjudantes().add(ajudante);
-            registrarMovimentacao(solicitacao, "Ajudante adicionado", ajudante.getName(), autor);
-            notificacaoService.enviar(ajudante, "Você foi adicionado como ajudante", solicitacao.getTitulo(), solicitacao.getId());
+        Users ajudante = buscarUsuario(ajudanteId, "Ajudante não encontrado.");
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+
+        verificarPodeAtuar(autor, solicitacao);
+        verificarChamadoEmAberto(solicitacao);
+        if (!isEquipe(ajudante)) {
+            throw new IllegalArgumentException(ajudante.getName() + " não é funcionário e não pode ser ajudante.");
         }
-        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
+        if (solicitacao.getTecnicoResponsavel() != null && solicitacao.getTecnicoResponsavel().getId().equals(ajudanteId)) {
+            throw new IllegalArgumentException(ajudante.getName() + " já é o técnico responsável por este chamado.");
+        }
+
+        if (solicitacao.getAjudantes() == null) solicitacao.setAjudantes(new ArrayList<>());
+        boolean jaEhAjudante = solicitacao.getAjudantes().stream().anyMatch(u -> u != null && u.getId().equals(ajudanteId));
+        if (jaEhAjudante) return paraRespostaComAnexos(solicitacao);
+
+        solicitacao.getAjudantes().add(ajudante);
+        Solicitacao salva = solicitacaoRepository.save(solicitacao);
+        registrarMovimentacao(salva, "Ajudante adicionado", ajudante.getName(), autor);
+        if (!ajudante.getId().equals(autor.getId())) {
+            notificacaoService.enviar(ajudante, "Você foi adicionado como ajudante", salva.getTitulo(), salva.getId());
+        }
+        return paraRespostaComAnexos(salva);
     }
 
     @Override
     public SolicitacaoResponseDTO removerAjudante(UUID id, UUID ajudanteId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
-        Users autor = userRepository.findById(autorId).orElse(null);
-        if (solicitacao.getAjudantes() != null) {
-            solicitacao.getAjudantes().removeIf(u -> u.getId().equals(ajudanteId));
-            registrarMovimentacao(solicitacao, "Ajudante removido", null, autor);
-        }
-        return paraRespostaComAnexos(solicitacaoRepository.save(solicitacao));
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+        verificarPodeAtuar(autor, solicitacao);
+
+        if (solicitacao.getAjudantes() == null) return paraRespostaComAnexos(solicitacao);
+
+        Optional<Users> removido = solicitacao.getAjudantes().stream()
+                .filter(u -> u != null && u.getId().equals(ajudanteId)).findFirst();
+        // Antes registrava "Ajudante removido" no histórico mesmo quando ninguém era removido
+        if (removido.isEmpty()) return paraRespostaComAnexos(solicitacao);
+
+        solicitacao.getAjudantes().removeIf(u -> u != null && u.getId().equals(ajudanteId));
+        Solicitacao salva = solicitacaoRepository.save(solicitacao);
+        registrarMovimentacao(salva, "Ajudante removido", removido.get().getName(), autor);
+        return paraRespostaComAnexos(salva);
     }
 
-    @Override public SolicitacaoResponseDTO concluir(UUID id, UUID autorId) { return atualizarStatus(id, StatusSolicitacao.CONCLUIDO, null, autorId); }
-    @Override public SolicitacaoResponseDTO validarFinalizacao(UUID id, UUID autorId) { return atualizarStatus(id, StatusSolicitacao.FINALIZADA, null, autorId); }
-    @Override public SolicitacaoResponseDTO rejeitar(UUID id, String motivo, UUID autorId) { return atualizarStatus(id, StatusSolicitacao.REJEITADA, motivo, autorId); }
+    // =====================================================================
+    // COMENTÁRIOS E HISTÓRICO
+    // =====================================================================
 
     @Override
     public List<ComentarioResponseDTO> listarComentarios(UUID solicitacaoId) {
@@ -204,13 +367,17 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     @Override
     public ComentarioResponseDTO adicionarComentario(UUID solicitacaoId, String texto, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(solicitacaoId);
-        Users autor = userRepository.findById(autorId).orElseThrow(() -> new RecursoNaoEncontradoException("Autor não encontrado."));
-        Comentario c = Comentario.builder().texto(texto).autor(autor).solicitacao(solicitacao).build();
-        registrarMovimentacao(solicitacao, "Comentário adicionado", autor.getName() + ": " + texto, autor);
-        if (solicitacao.getUsuarioSolicitante() != null && !autor.getId().equals(solicitacao.getUsuarioSolicitante().getId())) {
-            notificacaoService.enviar(solicitacao.getUsuarioSolicitante(), "Novo comentário no seu chamado", autor.getName() + ": " + texto, solicitacao.getId());
-        }
-        return ComentarioResponseDTO.fromEntity(comentarioRepository.save(c));
+        Users autor = buscarUsuario(autorId, "Autor não encontrado.");
+        String textoLimpo = texto.trim();
+
+        Comentario salvo = comentarioRepository.save(
+                Comentario.builder().texto(textoLimpo).autor(autor).solicitacao(solicitacao).build());
+        registrarMovimentacao(solicitacao, "Comentário adicionado", autor.getName() + ": " + textoLimpo, autor);
+
+        // Avisa o outro lado da conversa: se o solicitante comentou, o técnico recebe (antes
+        // só o solicitante era avisado, e o técnico nunca sabia da resposta).
+        notificarEnvolvidos(solicitacao, autor, "Novo comentário no chamado", autor.getName() + ": " + textoLimpo);
+        return ComentarioResponseDTO.fromEntity(salvo);
     }
 
     @Override
@@ -218,23 +385,99 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return movimentacaoRepository.findBySolicitacaoIdOrderByCreatedAtDesc(solicitacaoId).stream().map(MovimentacaoResponseDTO::fromEntity).toList();
     }
 
+    // =====================================================================
+    // RELATÓRIO
+    // =====================================================================
+
     @Override
     public RelatorioDTO gerarRelatorio(LocalDateTime inicio, LocalDateTime fim) {
-        List<Solicitacao> lista = (inicio != null && fim != null) ? solicitacaoRepository.findByPeriodo(inicio, fim) : solicitacaoRepository.findAll();
+        // Antes o período só era aplicado se início E fim viessem juntos; com só um deles,
+        // o filtro era ignorado sem avisar.
+        Query query = new Query();
+        if (inicio != null || fim != null) {
+            Criteria periodo = Criteria.where("createdAt");
+            if (inicio != null) periodo = periodo.gte(inicio);
+            if (fim != null) periodo = periodo.lte(fim);
+            query.addCriteria(periodo);
+        }
+        List<Solicitacao> lista = mongoTemplate.find(query, Solicitacao.class);
+
         long total = lista.size();
         long rejeitados = lista.stream().filter(s -> s.getStatus() == StatusSolicitacao.REJEITADA).count();
-        double tempoMedio = lista.stream().filter(s -> s.getDataFinalizacao() != null && s.getCreatedAt() != null)
-                .mapToLong(s -> Duration.between(s.getCreatedAt(), s.getDataFinalizacao()).toHours()).average().orElse(0) / 24.0;
+
+        // Tempo de resolução conta só chamados realmente resolvidos (FINALIZADA). Os rejeitados
+        // também têm dataFinalizacao e puxavam a média para baixo.
+        double tempoMedioDias = lista.stream()
+                .filter(s -> s.getStatus() == StatusSolicitacao.FINALIZADA
+                        && s.getDataFinalizacao() != null && s.getCreatedAt() != null)
+                .mapToLong(s -> Duration.between(s.getCreatedAt(), s.getDataFinalizacao()).toMinutes())
+                .average().orElse(0) / (60.0 * 24.0);
+
         Map<String, Long> contagemTipo = new HashMap<>();
         for (Solicitacao s : lista) { if (s.getTipo() != null) contagemTipo.merge(s.getTipo().getNome(), 1L, Long::sum); }
         String tipoMaisFreq = contagemTipo.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("-");
         long tipoQtd = contagemTipo.getOrDefault(tipoMaisFreq, 0L);
         double percRej = total > 0 ? (rejeitados * 100.0 / total) : 0;
-        return new RelatorioDTO(total, tempoMedio, tipoMaisFreq, tipoQtd, rejeitados, percRej);
+        return new RelatorioDTO(total, tempoMedioDias, tipoMaisFreq, tipoQtd, rejeitados, percRej);
     }
+
+    // =====================================================================
+    // AUXILIARES
+    // =====================================================================
 
     private Solicitacao buscarEntidadePorId(UUID id) {
         return solicitacaoRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação não encontrada com ID: " + id));
+    }
+
+    private Users buscarUsuario(UUID id, String mensagemSeNaoExistir) {
+        return userRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException(mensagemSeNaoExistir));
+    }
+
+    private boolean isAdmin(Users u) {
+        return u.getRole() == UserRole.ADMIN_ROLE;
+    }
+
+    private boolean isSupervisorOuAdmin(Users u) {
+        return u.getRole() == UserRole.ADMIN_ROLE || u.getRole() == UserRole.SUPERVISOR_ROLE;
+    }
+
+    /** Funcionário, supervisor ou admin: quem pode trabalhar em um chamado. */
+    private boolean isEquipe(Users u) {
+        return isSupervisorOuAdmin(u) || u.getRole() == UserRole.FUNCIONARIO_ROLE;
+    }
+
+    /**
+     * Supervisor e admin atuam em qualquer chamado. Funcionário só nos chamados em que é o
+     * técnico responsável ou ajudante (antes, qualquer funcionário alterava qualquer chamado).
+     */
+    private void verificarPodeAtuar(Users autor, Solicitacao s) {
+        if (isSupervisorOuAdmin(autor)) return;
+
+        boolean ehTecnico = s.getTecnicoResponsavel() != null && s.getTecnicoResponsavel().getId().equals(autor.getId());
+        boolean ehAjudante = s.getAjudantes() != null
+                && s.getAjudantes().stream().anyMatch(a -> a != null && a.getId().equals(autor.getId()));
+
+        if (autor.getRole() != UserRole.FUNCIONARIO_ROLE || (!ehTecnico && !ehAjudante)) {
+            throw new AccessDeniedException("Você só pode alterar chamados em que é o técnico responsável ou ajudante.");
+        }
+    }
+
+    private void verificarChamadoEmAberto(Solicitacao s) {
+        if (s.getStatus() != null && STATUS_FINAIS.contains(s.getStatus())) {
+            throw new IllegalArgumentException("Este chamado já foi encerrado (" + s.getStatus() + ").");
+        }
+    }
+
+    /** Envia push para o solicitante e para o técnico responsável, menos para quem fez a ação. */
+    private void notificarEnvolvidos(Solicitacao s, Users autor, String titulo, String corpo) {
+        Set<UUID> jaAvisados = new HashSet<>();
+        if (autor != null) jaAvisados.add(autor.getId());
+
+        for (Users destinatario : Arrays.asList(s.getUsuarioSolicitante(), s.getTecnicoResponsavel())) {
+            if (destinatario != null && jaAvisados.add(destinatario.getId())) {
+                notificacaoService.enviar(destinatario, titulo, corpo, s.getId());
+            }
+        }
     }
 
     private void registrarMovimentacao(Solicitacao s, String titulo, String descricao, Users autor) {

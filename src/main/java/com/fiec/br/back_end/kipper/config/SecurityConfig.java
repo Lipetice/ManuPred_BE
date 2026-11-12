@@ -40,9 +40,14 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
-                        // CORREÇÃO: Removido o POST /users daqui para exigir autenticação
                         .requestMatchers("/api/v1/users/auth/firebase").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // O CSS do tema do Swagger fica em /static; sem liberar, o navegador recebia 401
+                        // e o tema escuro nunca carregava.
+                        .requestMatchers("/swagger-theme.css").permitAll()
+                        // O Spring encaminha erros para /error; se exigir login, o erro original
+                        // é mascarado por um 401.
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()

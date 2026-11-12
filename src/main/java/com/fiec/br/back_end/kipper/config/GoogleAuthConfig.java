@@ -12,7 +12,7 @@ import java.util.Collections;
 @Configuration
 public class GoogleAuthConfig {
 
-    // CORREÇÃO: estava injetando ${app.oauth2.redirect-uri} por engano no merge
+    // CORREÇÃO: Voltou a apontar para o client-id correto
     @Value("${app.google.web-client-id}")
     private String webClientId;
 

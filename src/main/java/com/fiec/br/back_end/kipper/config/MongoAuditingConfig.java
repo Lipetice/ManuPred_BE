@@ -1,12 +1,16 @@
 package com.fiec.br.back_end.kipper.config;
 
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
+import com.fiec.br.back_end.kipper.model.entities.Auditoria;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.mongodb.config.EnableMongoAuditing;
+import org.springframework.data.mongodb.core.mapping.event.BeforeConvertCallback;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Configuration
@@ -24,6 +28,29 @@ public class MongoAuditingConfig {
                 return Optional.ofNullable(user.getEmail());
             }
             return Optional.of(authentication.getName());
+        };
+    }
+
+    /**
+     * As entidades já nascem com o id preenchido (UUID.randomUUID() no builder). O Spring Data
+     * decide se um documento é "novo" olhando se o id é nulo; como nunca é, ele trata todo save
+     * como atualização e NÃO preenche @CreatedDate / @CreatedBy.
+     * Este callback garante createdAt e createdBy no primeiro save, sem mudar o resto.
+     * (Classe anônima de propósito: com lambda o Spring não descobre o tipo genérico.)
+     */
+    @Bean
+    public BeforeConvertCallback<Auditoria> preencherDadosDeCriacao(AuditorAware<String> auditorAware) {
+        return new BeforeConvertCallback<Auditoria>() {
+            @Override
+            public Auditoria onBeforeConvert(Auditoria entity, String collection) {
+                if (entity.getCreatedAt() == null) {
+                    entity.setCreatedAt(LocalDateTime.now());
+                    if (entity.getCreatedBy() == null) {
+                        entity.setCreatedBy(auditorAware.getCurrentAuditor().orElse(null));
+                    }
+                }
+                return entity;
+            }
         };
     }
 }

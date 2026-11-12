@@ -6,8 +6,10 @@ import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
@@ -19,7 +21,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-// CORREÇÃO: Removidos @Getter/@Setter e imports desnecessários que voltaram no merge
 @Component
 public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
@@ -60,11 +61,19 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                 .orElseGet(() -> createUserFromGoogle(email, name));
 
         Map<String, Object> claims = new HashMap<>();
-        // CORREÇÃO: Removido o "userId" duplicado. O JwtUtil já coloca o "id".
         claims.put("name", user.getName());
         claims.put("pictureUrl", picture);
 
         String token = jwtService.generateToken(claims, user);
+
+        // A partir daqui quem autentica é o JWT. Se a sessão do login OAuth continuasse viva,
+        // o navegador mandaria o cookie JSESSIONID e o usuário logado seria um OAuth2User
+        // (e não um Users): os controllers quebrariam com ClassCastException (erro 500).
+        SecurityContextHolder.clearContext();
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
 
         String targetUrl = UriComponentsBuilder.fromUriString(redirectUri)
                 .queryParam("token", token)
@@ -76,7 +85,7 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
 
     private Users createUserFromGoogle(String email, String name) {
         Users user = Users.builder()
-                .name(name)
+                .name(name != null ? name : "Usuário Google")
                 .email(email)
                 .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                 .role(UserRole.USER_ROLE)

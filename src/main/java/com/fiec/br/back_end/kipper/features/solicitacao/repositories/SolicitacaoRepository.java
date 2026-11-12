@@ -17,4 +17,11 @@ public interface SolicitacaoRepository extends MongoRepository<Solicitacao, UUID
 
     @Query("{ 'createdAt': { $gte: ?0, $lte: ?1 } }")
     List<Solicitacao> findByPeriodo(LocalDateTime inicio, LocalDateTime fim);
+
+    // Usados para impedir a exclusão de tipo/local que ainda tem chamados apontando para ele
+    @Query(value = "{ 'tipo.$id': ?0 }", exists = true)
+    boolean existsByTipoId(UUID tipoId);
+
+    @Query(value = "{ 'local.$id': ?0 }", exists = true)
+    boolean existsByLocalId(UUID localId);
 }
