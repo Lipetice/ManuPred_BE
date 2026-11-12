@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fiec.br.back_end.kipper.model.entities.Auditoria;
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -27,8 +28,14 @@ public class Users extends Auditoria implements UserDetails {
     private UUID id = UUID.randomUUID();
 
     private String name;
+
+    // Índices: o login e a validação do token buscam o usuário por e-mail em toda requisição
+    @Indexed
     private String email;
+
     private String password;
+
+    @Indexed
     private String firebaseUid;
 
     @Builder.Default

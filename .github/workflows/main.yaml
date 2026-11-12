@@ -76,6 +76,8 @@ jobs:
       # - IA_API_KEY e GOOGLE_CLIENT_SECRET não eram repassados: em produção a IA ficava
       #   sempre "indisponível" e o login Google pelo site falhava. Cadastre esses secrets
       #   no repositório (se não existirem, ficam vazios e o resto funciona normalmente).
+      # - ADMIN_PASSWORD: senha do admin criado automaticamente (admin@manupred.com) quando
+      #   o banco ainda não tem nenhum ADMIN.
       - name: Rodar novo container
         run: |
           docker run -d --pull always --name manupred-be-app -p 8080:8080 \
@@ -86,4 +88,5 @@ jobs:
             -e FIREBASE_CREDENTIALS_JSON='${{ secrets.FIREBASE_CREDENTIALS_JSON }}' \
             -e IA_API_KEY='${{ secrets.IA_API_KEY }}' \
             -e GOOGLE_CLIENT_SECRET='${{ secrets.GOOGLE_CLIENT_SECRET }}' \
+            -e ADMIN_PASSWORD='${{ secrets.ADMIN_PASSWORD }}' \
             ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest

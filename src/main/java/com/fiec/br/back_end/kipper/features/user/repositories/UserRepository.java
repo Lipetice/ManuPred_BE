@@ -1,5 +1,6 @@
 package com.fiec.br.back_end.kipper.features.user.repositories;
 
+import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
@@ -15,4 +16,5 @@ public interface UserRepository extends MongoRepository<Users, UUID> {
     boolean existsByEmail(String email);
     List<Users> findAllByFcmToken(String fcmToken);
     List<Users> findByNameContainingIgnoreCase(String nome);
+    boolean existsByRole(UserRole role);
 }

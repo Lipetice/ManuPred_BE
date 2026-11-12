@@ -135,6 +135,10 @@ public class IaServiceImpl implements IaService {
 
         if (aberturaDe != null) filtrosAplicados.put("aberturaDe", filtroIa.aberturaDe());
         if (aberturaAte != null) filtrosAplicados.put("aberturaAte", filtroIa.aberturaAte());
+        if (finalizacaoDe != null) filtrosAplicados.put("finalizacaoDe", filtroIa.finalizacaoDe());
+        if (finalizacaoAte != null) filtrosAplicados.put("finalizacaoAte", filtroIa.finalizacaoAte());
+        if (Boolean.TRUE.equals(filtroIa.urgente())) filtrosAplicados.put("urgente", true);
+        if (filtroIa.numeroPatrimonio() != null) filtrosAplicados.put("numeroPatrimonio", filtroIa.numeroPatrimonio());
         if (filtroIa.termo() != null) filtrosAplicados.put("termo", filtroIa.termo());
 
         SolicitacaoSearchFilterDTO filtroFinal = new SolicitacaoSearchFilterDTO(
@@ -197,9 +201,13 @@ public class IaServiceImpl implements IaService {
         boolean ehAdmin = usuarioLogado.getRole() == com.fiec.br.back_end.kipper.features.user.model.entities.UserRole.ADMIN_ROLE;
         boolean ehFuncionario = usuarioLogado.getRole() == com.fiec.br.back_end.kipper.features.user.model.entities.UserRole.SUPERVISOR_ROLE
                 || usuarioLogado.getRole() == com.fiec.br.back_end.kipper.features.user.model.entities.UserRole.FUNCIONARIO_ROLE;
-        boolean ehDono = usuarioLogado.getId().equals(solicitacao.getUsuarioSolicitante().getId());
+        // Checagens com null: se o solicitante ou um ajudante foi deletado, a referência vem nula
+        // e antes isso derrubava o resumo com erro 500.
+        boolean ehDono = solicitacao.getUsuarioSolicitante() != null
+                && usuarioLogado.getId().equals(solicitacao.getUsuarioSolicitante().getId());
         boolean ehTecnico = solicitacao.getTecnicoResponsavel() != null && usuarioLogado.getId().equals(solicitacao.getTecnicoResponsavel().getId());
-        boolean ehAjudante = solicitacao.getAjudantes() != null && solicitacao.getAjudantes().stream().anyMatch(a -> a.getId().equals(usuarioLogado.getId()));
+        boolean ehAjudante = solicitacao.getAjudantes() != null && solicitacao.getAjudantes().stream()
+                .anyMatch(a -> a != null && a.getId().equals(usuarioLogado.getId()));
 
         if (!ehAdmin && !ehFuncionario && !ehDono && !ehTecnico && !ehAjudante) {
             throw new org.springframework.security.access.AccessDeniedException("Sem permissão para ver este chamado.");
@@ -253,15 +261,16 @@ public class IaServiceImpl implements IaService {
     private void verificarLimite(String email) {
         long agora = System.currentTimeMillis();
 
-        controleChamadas.putIfAbsent(email, new ConcurrentLinkedQueue<>());
-        ConcurrentLinkedQueue<Long> chamadas = controleChamadas.get(email);
+        ConcurrentLinkedQueue<Long> chamadas = controleChamadas.computeIfAbsent(email, k -> new ConcurrentLinkedQueue<>());
 
-        chamadas.removeIf(tempo -> agora - tempo > 60000);
-
-        if (chamadas.size() >= limitePorMinuto) {
-            throw new LimiteIaException("Você atingiu o limite de uso da IA. Aguarde um minuto.");
+        // synchronized: duas requisições ao mesmo tempo do mesmo usuário não passam juntas do limite
+        synchronized (chamadas) {
+            chamadas.removeIf(tempo -> agora - tempo > 60000);
+            if (chamadas.size() >= limitePorMinuto) {
+                throw new LimiteIaException("Você atingiu o limite de uso da IA. Aguarde um minuto.");
+            }
+            chamadas.add(agora);
         }
-        chamadas.add(agora);
     }
 
     private <T> T parseJsonSeguro(String json, Class<T> classe) {

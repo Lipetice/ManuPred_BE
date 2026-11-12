@@ -334,7 +334,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
         solicitacao.setUrgente(urgente);
-        if (urgente) solicitacao.setPrioridade(PrioridadeSolicitacao.URGENTE);
+        if (urgente) {
+            solicitacao.setPrioridade(PrioridadeSolicitacao.URGENTE);
+        } else if (solicitacao.getPrioridade() == PrioridadeSolicitacao.URGENTE) {
+            // Tirou a urgência: a prioridade também deixa de ser URGENTE (antes ficava presa)
+            solicitacao.setPrioridade(PrioridadeSolicitacao.ALTA);
+        }
         Solicitacao salva = solicitacaoRepository.save(solicitacao);
 
         registrarMovimentacao(salva, urgente ? "Marcado como urgente" : "Urgência removida", "Por " + autor.getName(), autor);

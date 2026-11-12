@@ -1,12 +1,14 @@
 spring:
   application:
     name: kipper
+  # No Spring Boot 4 o endereço do banco fica em "spring.mongodb" (antes era "spring.data.mongodb").
+  # No lugar antigo ele era ignorado: o back conectava no padrão localhost e gravava no banco "test".
+  mongodb:
+    # Lê do IntelliJ/Ambiente. Se não achar, usa o local.
+    uri: ${MONGODB_URI:mongodb://localhost:27017/kipper_db}
   data:
     mongodb:
-      # Lê do IntelliJ/Ambiente. Se não achar, usa o local.
-      uri: ${MONGODB_URI:mongodb://localhost:27017/kipper_db}
       auto-index-creation: true
-      uuid-representation: standard
   servlet:
     multipart:
       enabled: true
@@ -78,6 +80,8 @@ app:
     password: ${ADMIN_PASSWORD:}
   jwt:
     secret: ${JWT_SECRET:TrocarPorUmaChaveAleatoriaDeProducaoComPeloMenos32Caracteres}
+    # Validade do token de login. Com 30 minutos, o app desloga quem fica parado meia hora.
+    expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:30}
   firebase:
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
   google:
@@ -88,5 +92,6 @@ app:
     provedor: ${IA_PROVEDOR:gemini}
     api-key: ${IA_API_KEY:}
     modelo: ${IA_MODELO:gemini-3.8-flash}
-    timeout-segundos: ${IA_TIMEOUT:20}
+    # A primeira chamada ao Gemini às vezes demora; com 20s ela caía em erro 503
+    timeout-segundos: ${IA_TIMEOUT:40}
     limite-por-minuto: ${IA_LIMITE_MINUTO:10}

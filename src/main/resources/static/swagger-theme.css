@@ -1,15 +1,22 @@
-/* swagger-theme.css - Tema escuro simples */
+/*
+ * swagger-theme.css
+ *
+ * Antes este arquivo "escurecia" o Swagger invertendo as cores da página inteira
+ * (filter: invert + hue-rotate). Isso deixava tudo acinzentado e com contraste ruim.
+ * Agora o Swagger usa o visual padrão (claro), só com pequenos ajustes de leitura.
+ */
 html {
     box-sizing: border-box;
     overflow-y: scroll;
 }
+
 body {
     margin: 0;
-    background: #1c1e21;
+    background: #fafafa;
 }
-.swagger-ui {
-    filter: invert(88%) hue-rotate(180deg);
-}
-.swagger-ui .microlight {
-    filter: invert(100%) hue-rotate(180deg);
+
+/* Deixa os blocos de JSON um pouco maiores e mais fáceis de ler */
+.swagger-ui .microlight,
+.swagger-ui textarea {
+    font-size: 13px;
 }

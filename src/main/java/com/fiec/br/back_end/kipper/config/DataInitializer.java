@@ -69,9 +69,8 @@ public class DataInitializer implements CommandLineRunner {
      * banco novo. Só age quando não há nenhum admin e a variável ADMIN_PASSWORD está definida.
      */
     private void criarAdminInicial() {
-        boolean jaExisteAdmin = userRepository.findAll().stream()
-                .anyMatch(u -> u.getRole() == UserRole.ADMIN_ROLE);
-        if (jaExisteAdmin) return;
+        // Consulta direta no banco, sem carregar todos os usuários
+        if (userRepository.existsByRole(UserRole.ADMIN_ROLE)) return;
 
         if (adminPassword == null || adminPassword.isBlank()) {
             log.warn("Nenhum ADMIN no banco e a variável ADMIN_PASSWORD não foi definida: "
