@@ -10,8 +10,9 @@ spring:
   servlet:
     multipart:
       enabled: true
+      # Cada foto pode ter até 10MB; o envio inteiro (várias fotos juntas) até 50MB
       max-file-size: 10MB
-      max-request-size: 10MB
+      max-request-size: 50MB
       resolve-lazily: false
   security:
     oauth2:
@@ -29,6 +30,10 @@ spring:
 server:
   port: 8080
   shutdown: graceful
+  tomcat:
+    # Deixa o Tomcat terminar de receber um upload grande demais para conseguir devolver
+    # a mensagem de erro (com o padrão de 2MB a conexão simplesmente caía).
+    max-swallow-size: 100MB
 management:
   endpoints:
     web:
@@ -65,6 +70,12 @@ springdoc:
 app:
   # Pasta dos anexos dos chamados (no Docker: /app/uploads, montada como volume)
   upload-dir: ${UPLOAD_DIR:uploads}
+  # Admin criado automaticamente quando ainda não existe nenhum ADMIN no banco.
+  # Só é criado se ADMIN_PASSWORD estiver definida (a senha não fica no repositório).
+  admin:
+    nome: ${ADMIN_NAME:Administrador}
+    email: ${ADMIN_EMAIL:admin@manupred.com}
+    password: ${ADMIN_PASSWORD:}
   jwt:
     secret: ${JWT_SECRET:TrocarPorUmaChaveAleatoriaDeProducaoComPeloMenos32Caracteres}
   firebase:

@@ -47,6 +47,7 @@ public class AdminController {
 
     // ============ TIPOS DE CHAMADO ============
     @Operation(summary = "Listar tipos de chamado")
+    @PreAuthorize("permitAll()") // <--- ADICIONE ESTA LINHA
     @GetMapping("/tipos")
     public ResponseEntity<List<TipoChamado>> listarTipos() {
         return ResponseEntity.ok(tipoRepo.findAll());

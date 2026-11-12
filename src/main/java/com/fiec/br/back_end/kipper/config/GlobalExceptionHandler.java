@@ -116,7 +116,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> handleMaxSizeException(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("erro", "O arquivo enviado é muito grande. O limite máximo é 10MB."));
+                .body(Map.of("erro", "Arquivo muito grande. Cada arquivo pode ter até 10MB e o envio completo até 50MB."));
     }
 
     @ExceptionHandler(IaIndisponivelException.class)

@@ -3,6 +3,7 @@ package com.fiec.br.back_end.kipper.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -42,20 +43,15 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/users/auth/firebase").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // O CSS do tema do Swagger fica em /static; sem liberar, o navegador recebia 401
-                        // e o tema escuro nunca carregava.
                         .requestMatchers("/swagger-theme.css").permitAll()
-                        // O Spring encaminha erros para /error; se exigir login, o erro original
-                        // é mascarado por um 401.
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
+                        // CORREÇÃO: Liberar a listagem de tipos para o front não precisar de token
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/tipos").permitAll()
                         .anyRequest().authenticated()
                 )
-                // Na API, requisição sem token válido recebe 401 (o app e o site tratam isso como
-                // sessão expirada). Sem esta regra, o oauth2Login redirecionaria para a página de
-                // login do Google e o cliente receberia HTML em vez de um erro.
                 .exceptionHandling(e -> e.defaultAuthenticationEntryPointFor(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
                         PathPatternRequestMatcher.withDefaults().matcher("/api/**")))

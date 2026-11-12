@@ -161,6 +161,42 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     public SolicitacaoResponseDTO buscarPorId(UUID id) { return paraRespostaComAnexos(buscarEntidadePorId(id)); }
 
     // =====================================================================
+    // EXCLUSÃO
+    // =====================================================================
+
+    /**
+     * Apaga o chamado de vez, junto com comentários, histórico e anexos.
+     *  - ADMIN: qualquer chamado, em qualquer status;
+     *  - solicitante: só o próprio chamado e só enquanto estiver ABERTO (ninguém começou a atender).
+     */
+    @Override
+    public void deletar(UUID id, UUID autorId) {
+        Solicitacao solicitacao = buscarEntidadePorId(id);
+        Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
+
+        if (!isAdmin(autor)) {
+            boolean ehDono = solicitacao.getUsuarioSolicitante() != null
+                    && solicitacao.getUsuarioSolicitante().getId().equals(autor.getId());
+            if (!ehDono) {
+                throw new AccessDeniedException("Só quem abriu o chamado ou um ADMIN pode excluí-lo.");
+            }
+            if (solicitacao.getStatus() != StatusSolicitacao.ABERTO) {
+                throw new IllegalArgumentException("Só é possível excluir um chamado que ainda está ABERTO. "
+                        + "Este já está " + solicitacao.getStatus() + ".");
+            }
+        }
+
+        // Comentários, histórico e anexos guardam só uma referência ao chamado: apaga junto
+        // para não sobrar registro órfão no banco.
+        mongoTemplate.remove(new Query(Criteria.where("solicitacao.$id").is(id)), Comentario.class);
+        mongoTemplate.remove(new Query(Criteria.where("solicitacao.$id").is(id)), Movimentacao.class);
+        mongoTemplate.remove(new Query(Criteria.where("solicitacao.$id").is(id)), Anexo.class);
+        fileStorageService.apagarArquivos(id);
+
+        solicitacaoRepository.deleteById(id);
+    }
+
+    // =====================================================================
     // STATUS
     // =====================================================================
 

@@ -151,6 +151,16 @@ public class SolicitacaoController {
         return ResponseEntity.ok(r);
     }
 
+    @Operation(summary = "Excluir chamado",
+            description = "Apaga o chamado de vez, com comentários, histórico e anexos. "
+                    + "ADMIN exclui qualquer chamado; o solicitante só exclui o próprio enquanto estiver ABERTO.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deletar(@PathVariable UUID id) {
+        Users u = getUsuarioLogado();
+        solicitacaoService.deletar(id, u.getId());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Atualizar status",
             description = "Funcionário só altera chamados em que é técnico responsável ou ajudante. "
                     + "FINALIZADA só pode ser definida aqui por ADMIN; o fluxo normal é o solicitante usar /validar.")

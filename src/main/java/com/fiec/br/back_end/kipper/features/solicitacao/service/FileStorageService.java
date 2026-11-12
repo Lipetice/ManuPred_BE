@@ -8,9 +8,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Component
 public class FileStorageService {
@@ -97,5 +99,28 @@ public class FileStorageService {
             nome = nome.substring(nome.length() - 100); // preserva a extensão, que fica no fim
         }
         return nome.isBlank() ? "arquivo" : nome;
+    }
+
+    /**
+     * Apaga a pasta de anexos de um chamado excluído. Se algum arquivo não puder ser apagado,
+     * a exclusão do chamado segue normalmente (o arquivo só fica sobrando no disco).
+     */
+    public void apagarArquivos(UUID solicitacaoId) {
+        Path raiz = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path pasta = raiz.resolve(solicitacaoId.toString()).normalize();
+        if (!pasta.startsWith(raiz) || !Files.isDirectory(pasta)) return;
+
+        try (Stream<Path> arquivos = Files.walk(pasta)) {
+            // Ordem inversa: primeiro os arquivos, por último a própria pasta
+            arquivos.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {
+                    // segue apagando o resto
+                }
+            });
+        } catch (IOException ignored) {
+            // pasta inacessível: não impede a exclusão do chamado
+        }
     }
 }
