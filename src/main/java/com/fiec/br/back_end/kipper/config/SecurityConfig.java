@@ -43,7 +43,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/users/auth/firebase").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/swagger-theme.css").permitAll()
+                        .requestMatchers("/swagger-theme.css", "/swagger-filtro.js").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**").permitAll()

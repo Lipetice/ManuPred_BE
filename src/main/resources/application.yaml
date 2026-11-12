@@ -63,10 +63,21 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
+    # Já abre os endpoints prontos para testar, sem precisar clicar em "Try it out"
     try-it-out-enabled: true
+    # Campo de busca (melhorado pelo static/swagger-filtro.js)
     filter: true
     display-request-duration: true
-    default-models-expand-depth: 1
+    # Mantém o token do "Authorize" mesmo depois de recarregar a página
+    persist-authorization: true
+    # Começa com as seções fechadas, para enxergar tudo de uma vez
+    doc-expansion: none
+    # O endereço da página muda conforme o endpoint aberto (dá para mandar o link direto)
+    deep-linking: true
+    # Mostra o comando curl pronto de cada requisição
+    request-snippets-enabled: true
+    # Esconde a lista de "Schemas" no fim da página (os modelos continuam em cada endpoint)
+    default-models-expand-depth: -1
     default-model-expand-depth: 1
   show-actuator: false
 app:

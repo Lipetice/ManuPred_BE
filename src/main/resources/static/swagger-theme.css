@@ -1,9 +1,8 @@
 /*
  * swagger-theme.css
  *
- * Antes este arquivo "escurecia" o Swagger invertendo as cores da página inteira
- * (filter: invert + hue-rotate). Isso deixava tudo acinzentado e com contraste ruim.
- * Agora o Swagger usa o visual padrão (claro), só com pequenos ajustes de leitura.
+ * Ajustes visuais do Swagger. Não força cor de fundo: o Swagger segue o tema claro ou
+ * escuro do sistema/navegador.
  */
 html {
     box-sizing: border-box;
@@ -12,11 +11,39 @@ html {
 
 body {
     margin: 0;
-    background: #fafafa;
 }
 
-/* Deixa os blocos de JSON um pouco maiores e mais fáceis de ler */
+/* Campo de busca maior e mais visível */
+.swagger-ui .filter-container {
+    margin: 0 auto 10px;
+    padding: 0 20px;
+    max-width: 1460px;
+}
+
+.swagger-ui .filter-container .operation-filter-input {
+    width: 100%;
+    margin: 10px 0 0;
+    padding: 10px 14px;
+    font-size: 15px;
+    border-radius: 6px;
+    border: 2px solid #49cc90;
+}
+
+/* Blocos de JSON um pouco maiores e mais fáceis de ler */
 .swagger-ui .microlight,
 .swagger-ui textarea {
     font-size: 13px;
+}
+
+/* Tabelas da descrição da API (perfis, códigos de erro) com espaçamento */
+.swagger-ui .info .markdown table {
+    border-collapse: collapse;
+    margin: 8px 0 16px;
+}
+
+.swagger-ui .info .markdown th,
+.swagger-ui .info .markdown td {
+    padding: 6px 10px;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    vertical-align: top;
 }
