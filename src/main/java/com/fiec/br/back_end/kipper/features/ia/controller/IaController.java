@@ -26,7 +26,9 @@ public class IaController {
         return (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
     }
 
+    // Liberado sem login (também está permitAll no SecurityConfig)
     @Operation(summary = "Verificar status da IA")
+    @PreAuthorize("permitAll()")
     @GetMapping("/status")
     public ResponseEntity<IaStatusDTO> status() {
         return ResponseEntity.ok(iaService.verificarStatus());

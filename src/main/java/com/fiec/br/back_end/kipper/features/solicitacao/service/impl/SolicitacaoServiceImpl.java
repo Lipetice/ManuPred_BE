@@ -13,6 +13,7 @@ import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import com.fiec.br.back_end.kipper.features.user.service.NotificacaoService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -28,15 +29,14 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SolicitacaoServiceImpl implements SolicitacaoService {
 
-    /** Status que encerram o chamado. Depois deles, só ADMIN consegue mexer (reabrir). */
     private static final Set<StatusSolicitacao> STATUS_FINAIS = EnumSet.of(
             StatusSolicitacao.FINALIZADA, StatusSolicitacao.REJEITADA, StatusSolicitacao.CANCELADO);
 
-    /** Mudanças de status que geram notificação push para os envolvidos. */
     private static final Set<StatusSolicitacao> STATUS_QUE_NOTIFICAM = EnumSet.of(
             StatusSolicitacao.CONCLUIDO, StatusSolicitacao.FINALIZADA,
             StatusSolicitacao.REJEITADA, StatusSolicitacao.CANCELADO);
@@ -76,8 +76,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         if (filtro.tipoId() != null) criterias.add(Criteria.where("tipo.$id").is(filtro.tipoId()));
         if (filtro.localId() != null) criterias.add(Criteria.where("local.$id").is(filtro.localId()));
         if (filtro.setorId() != null) {
-            // "local" é uma referência (DBRef): o Mongo não filtra por campos do documento referenciado.
-            // Por isso buscamos os locais do setor e filtramos pelos IDs deles.
             List<UUID> locaisDoSetor = localRepository.findBySetorId(filtro.setorId()).stream()
                     .map(Local::getId).toList();
             criterias.add(Criteria.where("local.$id").in(locaisDoSetor));
@@ -105,11 +103,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return s != null && !s.isBlank();
     }
 
-    /**
-     * O texto digitado pelo usuário (ou devolvido pela IA) vai para um regex do Mongo.
-     * Sem escapar, uma busca por "sala (2" ou "c++" gerava regex inválido e erro 500.
-     * Pattern.quote faz o texto ser tratado literalmente.
-     */
     private String textoLiteral(String texto) {
         return Pattern.quote(texto.trim());
     }
@@ -125,14 +118,11 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Users solicitante = buscarUsuario(usuarioSolicitanteId, "Usuário solicitante não encontrado.");
         TipoChamado tipo = tipoChamadoRepository.findById(dto.tipoId())
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Tipo de chamado não encontrado."));
-        // Antes, um localId inexistente era ignorado em silêncio e o chamado ficava sem local.
         Local local = dto.localId() != null
                 ? localRepository.findById(dto.localId())
-                        .orElseThrow(() -> new RecursoNaoEncontradoException("Local não encontrado."))
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Local não encontrado."))
                 : null;
 
-        // Valida TODOS os anexos antes de gravar qualquer coisa. Antes, um arquivo recusado
-        // devolvia erro 400 mas o chamado já tinha sido salvo (e o usuário criava outro).
         List<MultipartFile> arquivos = anexos == null ? List.of()
                 : anexos.stream().filter(a -> a != null && !a.isEmpty()).toList();
         arquivos.forEach(fileStorageService::validar);
@@ -167,7 +157,11 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     /**
      * Apaga o chamado de vez, junto com comentários, histórico e anexos.
      *  - ADMIN: qualquer chamado, em qualquer status;
-     *  - solicitante: só o próprio chamado e só enquanto estiver ABERTO (ninguém começou a atender).
+     *  - solicitante: só o próprio chamado e só enquanto estiver ABERTO.
+     *
+     * A checagem de "é o dono?" é feita direto no banco com mongoTemplate.exists, sem
+     * depender de o @DBRef usuarioSolicitante ter vindo carregado. Antes, se o DBRef viesse
+     * nulo (por inconsistência do banco), o dono recebia 403 ao tentar apagar o próprio chamado.
      */
     @Override
     public void deletar(UUID id, UUID autorId) {
@@ -175,8 +169,9 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
 
         if (!isAdmin(autor)) {
-            boolean ehDono = solicitacao.getUsuarioSolicitante() != null
-                    && solicitacao.getUsuarioSolicitante().getId().equals(autor.getId());
+            Query queryDono = new Query(Criteria.where("_id").is(id)
+                    .and("usuarioSolicitante.$id").is(autorId));
+            boolean ehDono = mongoTemplate.exists(queryDono, Solicitacao.class);
             if (!ehDono) {
                 throw new AccessDeniedException("Só quem abriu o chamado ou um ADMIN pode excluí-lo.");
             }
@@ -186,8 +181,8 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
             }
         }
 
-        // Comentários, histórico e anexos guardam só uma referência ao chamado: apaga junto
-        // para não sobrar registro órfão no banco.
+        log.info("Excluindo chamado {} por {} ({})", id, autor.getEmail(), autor.getRole());
+
         mongoTemplate.remove(new Query(Criteria.where("solicitacao.$id").is(id)), Comentario.class);
         mongoTemplate.remove(new Query(Criteria.where("solicitacao.$id").is(id)), Movimentacao.class);
         mongoTemplate.remove(new Query(Criteria.where("solicitacao.$id").is(id)), Anexo.class);
@@ -200,15 +195,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     // STATUS
     // =====================================================================
 
-    /** Endpoint genérico PATCH /{id}/status (equipe). */
     @Override
     public SolicitacaoResponseDTO atualizarStatus(UUID id, StatusSolicitacao novoStatus, String motivo, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
         verificarPodeAtuar(autor, solicitacao);
 
-        // Finalizar é a confirmação do SOLICITANTE (/validar). Sem esta trava, qualquer
-        // funcionário finalizava o próprio serviço e pulava a validação.
         if (novoStatus == StatusSolicitacao.FINALIZADA && !isAdmin(autor)) {
             throw new AccessDeniedException("A finalização é feita pelo solicitante, ao validar o chamado.");
         }
@@ -223,7 +215,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return mudarStatus(solicitacao, StatusSolicitacao.CONCLUIDO, null, autor);
     }
 
-    /** Quem pode chamar (solicitante ou admin) é verificado no controller. */
     @Override
     public SolicitacaoResponseDTO validarFinalizacao(UUID id, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
@@ -231,7 +222,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return mudarStatus(solicitacao, StatusSolicitacao.FINALIZADA, null, autor);
     }
 
-    /** Quem pode chamar (solicitante, supervisor ou admin) é verificado no controller. */
     @Override
     public SolicitacaoResponseDTO rejeitar(UUID id, String motivo, UUID autorId) {
         if (!temTexto(motivo)) throw new IllegalArgumentException("Informe o motivo da rejeição.");
@@ -255,7 +245,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
             }
             case CANCELADO -> { /* mantém as datas como estão */ }
             default -> {
-                // Voltou para um status "em aberto" (ex.: reaberto): limpa os dados de encerramento
                 solicitacao.setDataConclusao(null);
                 solicitacao.setDataFinalizacao(null);
                 solicitacao.setMotivoRejeicao(null);
@@ -272,12 +261,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return paraRespostaComAnexos(salva);
     }
 
-    /**
-     * Regras de mudança de status:
-     *  - não pode "mudar" para o status em que já está;
-     *  - chamado encerrado (FINALIZADA, REJEITADA, CANCELADO) só é alterado por ADMIN;
-     *  - FINALIZADA só a partir de CONCLUIDO (o técnico conclui, o solicitante valida).
-     */
     private void validarTransicao(StatusSolicitacao antigo, StatusSolicitacao novo, Users autor) {
         if (novo == null) throw new IllegalArgumentException("O novo status é obrigatório.");
         if (antigo == novo) {
@@ -312,8 +295,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
 
         verificarChamadoEmAberto(solicitacao);
-        // Antes dava para atribuir o chamado a um usuário comum (USER_ROLE), que não tem
-        // permissão para concluir: o chamado ficava travado.
         if (!isEquipe(tecnico)) {
             throw new IllegalArgumentException(tecnico.getName() + " não é funcionário e não pode ser técnico de um chamado.");
         }
@@ -337,7 +318,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         if (urgente) {
             solicitacao.setPrioridade(PrioridadeSolicitacao.URGENTE);
         } else if (solicitacao.getPrioridade() == PrioridadeSolicitacao.URGENTE) {
-            // Tirou a urgência: a prioridade também deixa de ser URGENTE (antes ficava presa)
             solicitacao.setPrioridade(PrioridadeSolicitacao.ALTA);
         }
         Solicitacao salva = solicitacaoRepository.save(solicitacao);
@@ -387,7 +367,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
 
         Optional<Users> removido = solicitacao.getAjudantes().stream()
                 .filter(u -> u != null && u.getId().equals(ajudanteId)).findFirst();
-        // Antes registrava "Ajudante removido" no histórico mesmo quando ninguém era removido
         if (removido.isEmpty()) return paraRespostaComAnexos(solicitacao);
 
         solicitacao.getAjudantes().removeIf(u -> u != null && u.getId().equals(ajudanteId));
@@ -415,8 +394,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
                 Comentario.builder().texto(textoLimpo).autor(autor).solicitacao(solicitacao).build());
         registrarMovimentacao(solicitacao, "Comentário adicionado", autor.getName() + ": " + textoLimpo, autor);
 
-        // Avisa o outro lado da conversa: se o solicitante comentou, o técnico recebe (antes
-        // só o solicitante era avisado, e o técnico nunca sabia da resposta).
         notificarEnvolvidos(solicitacao, autor, "Novo comentário no chamado", autor.getName() + ": " + textoLimpo);
         return ComentarioResponseDTO.fromEntity(salvo);
     }
@@ -432,8 +409,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
 
     @Override
     public RelatorioDTO gerarRelatorio(LocalDateTime inicio, LocalDateTime fim) {
-        // Antes o período só era aplicado se início E fim viessem juntos; com só um deles,
-        // o filtro era ignorado sem avisar.
         Query query = new Query();
         if (inicio != null || fim != null) {
             Criteria periodo = Criteria.where("createdAt");
@@ -446,8 +421,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         long total = lista.size();
         long rejeitados = lista.stream().filter(s -> s.getStatus() == StatusSolicitacao.REJEITADA).count();
 
-        // Tempo de resolução conta só chamados realmente resolvidos (FINALIZADA). Os rejeitados
-        // também têm dataFinalizacao e puxavam a média para baixo.
         double tempoMedioDias = lista.stream()
                 .filter(s -> s.getStatus() == StatusSolicitacao.FINALIZADA
                         && s.getDataFinalizacao() != null && s.getCreatedAt() != null)
@@ -482,15 +455,10 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         return u.getRole() == UserRole.ADMIN_ROLE || u.getRole() == UserRole.SUPERVISOR_ROLE;
     }
 
-    /** Funcionário, supervisor ou admin: quem pode trabalhar em um chamado. */
     private boolean isEquipe(Users u) {
         return isSupervisorOuAdmin(u) || u.getRole() == UserRole.FUNCIONARIO_ROLE;
     }
 
-    /**
-     * Supervisor e admin atuam em qualquer chamado. Funcionário só nos chamados em que é o
-     * técnico responsável ou ajudante (antes, qualquer funcionário alterava qualquer chamado).
-     */
     private void verificarPodeAtuar(Users autor, Solicitacao s) {
         if (isSupervisorOuAdmin(autor)) return;
 
@@ -509,7 +477,6 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         }
     }
 
-    /** Envia push para o solicitante e para o técnico responsável, menos para quem fez a ação. */
     private void notificarEnvolvidos(Solicitacao s, Users autor, String titulo, String corpo) {
         Set<UUID> jaAvisados = new HashSet<>();
         if (autor != null) jaAvisados.add(autor.getId());

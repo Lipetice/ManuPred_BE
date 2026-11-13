@@ -48,8 +48,12 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
-                        // CORREÇÃO: Liberar a listagem de tipos para o front não precisar de token
+                        // Listagens públicas (o app e o site mostram antes do login)
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/tipos").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/setores").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/locais").permitAll()
+                        // CORREÇÃO: status da IA pode ser checado sem login
+                        .requestMatchers(HttpMethod.GET, "/api/v1/ia/status").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(e -> e.defaultAuthenticationEntryPointFor(

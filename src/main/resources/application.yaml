@@ -2,7 +2,6 @@ spring:
   application:
     name: kipper
   # No Spring Boot 4 o endereço do banco fica em "spring.mongodb" (antes era "spring.data.mongodb").
-  # No lugar antigo ele era ignorado: o back conectava no padrão localhost e gravava no banco "test".
   mongodb:
     # Lê do IntelliJ/Ambiente. Se não achar, usa o local.
     uri: ${MONGODB_URI:mongodb://localhost:27017/kipper_db}
@@ -22,8 +21,6 @@ spring:
         registration:
           google:
             client-id: ${GOOGLE_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
-            # Com valor padrão vazio a aplicação sobe mesmo sem a variável; o login Google
-            # pelo site (redirect /oauth2) só funciona com GOOGLE_CLIENT_SECRET definido.
             client-secret: ${GOOGLE_CLIENT_SECRET:}
             scope:
               - openid
@@ -63,35 +60,24 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
-    # Já abre os endpoints prontos para testar, sem precisar clicar em "Try it out"
     try-it-out-enabled: true
-    # Campo de busca (melhorado pelo static/swagger-filtro.js)
     filter: true
     display-request-duration: true
-    # Mantém o token do "Authorize" mesmo depois de recarregar a página
     persist-authorization: true
-    # Começa com as seções fechadas, para enxergar tudo de uma vez
     doc-expansion: none
-    # O endereço da página muda conforme o endpoint aberto (dá para mandar o link direto)
     deep-linking: true
-    # Mostra o comando curl pronto de cada requisição
     request-snippets-enabled: true
-    # Esconde a lista de "Schemas" no fim da página (os modelos continuam em cada endpoint)
     default-models-expand-depth: -1
     default-model-expand-depth: 1
   show-actuator: false
 app:
-  # Pasta dos anexos dos chamados (no Docker: /app/uploads, montada como volume)
   upload-dir: ${UPLOAD_DIR:uploads}
-  # Admin criado automaticamente quando ainda não existe nenhum ADMIN no banco.
-  # Só é criado se ADMIN_PASSWORD estiver definida (a senha não fica no repositório).
   admin:
     nome: ${ADMIN_NAME:Administrador}
     email: ${ADMIN_EMAIL:admin@manupred.com}
     password: ${ADMIN_PASSWORD:}
   jwt:
     secret: ${JWT_SECRET:TrocarPorUmaChaveAleatoriaDeProducaoComPeloMenos32Caracteres}
-    # Validade do token de login. Com 30 minutos, o app desloga quem fica parado meia hora.
     expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:30}
   firebase:
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
@@ -102,7 +88,8 @@ app:
   ia:
     provedor: ${IA_PROVEDOR:gemini}
     api-key: ${IA_API_KEY:}
-    modelo: ${IA_MODELO:gemini-3.8-flash}
-    # A primeira chamada ao Gemini às vezes demora; com 20s ela caía em erro 503
+    # CORREÇÃO: modelo estável e mais leve para evitar os erros 503 intermitentes
+    modelo: ${IA_MODELO:gemini-3.5-flash-lite}
+    # A primeira chamada ao Gemini às vezes demora; com 40s fica mais tolerante
     timeout-segundos: ${IA_TIMEOUT:40}
     limite-por-minuto: ${IA_LIMITE_MINUTO:10}

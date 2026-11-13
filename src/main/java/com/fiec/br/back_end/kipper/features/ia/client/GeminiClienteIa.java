@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.UnknownContentTypeException;
 
 import java.util.List;
 import java.util.Map;
@@ -18,7 +19,7 @@ import java.util.Map;
 public class GeminiClienteIa implements ClienteIa {
 
     /** Quantas vezes tenta de novo quando o Google demora ou fica sobrecarregado. */
-    private static final int TENTATIVAS_EXTRAS = 1;
+    private static final int TENTATIVAS_EXTRAS = 2;
 
     private final RestClient restClient;
     private final String apiKey;
@@ -30,7 +31,6 @@ public class GeminiClienteIa implements ClienteIa {
         this.apiKey = apiKey;
         this.modelo = modelo;
 
-        // Timeout para a requisição não travar para sempre
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(timeoutSegundos * 1000);
         factory.setReadTimeout(timeoutSegundos * 1000);
@@ -53,30 +53,38 @@ public class GeminiClienteIa implements ClienteIa {
                 "generationConfig", Map.of("responseMimeType", "application/json", "temperature", 0.1)
         );
 
-        // A primeira chamada às vezes falha por demora ou sobrecarga do Google (o erro 503 que
-        // aparecia na primeira tentativa). Nesses casos tenta mais uma vez antes de desistir.
         for (int tentativa = 0; ; tentativa++) {
             try {
                 return chamar(url, body);
             } catch (ResourceAccessException e) {
-                // Timeout ou falha de conexão
                 if (tentativa < TENTATIVAS_EXTRAS) {
-                    log.warn("Gemini não respondeu a tempo ({}). Tentando de novo...", e.getMessage());
+                    log.warn("Gemini não respondeu a tempo. Tentando de novo...");
+                    esperar(tentativa);
                     continue;
                 }
                 log.error("Gemini não respondeu: {}", e.getMessage());
                 throw new IaIndisponivelException("A IA demorou para responder. Tente novamente.");
             } catch (RestClientResponseException e) {
                 int status = e.getStatusCode().value();
-                if (status >= 500 && tentativa < TENTATIVAS_EXTRAS) {
+                if ((status == 503 || status == 429) && tentativa < TENTATIVAS_EXTRAS) {
                     log.warn("Gemini respondeu {} (instabilidade). Tentando de novo...", status);
+                    esperar(tentativa);
                     continue;
                 }
                 log.error("Erro ao chamar Gemini: {} {}", status, e.getResponseBodyAsString());
                 if (status == 429) {
                     throw new LimiteIaException("O limite de uso da IA foi atingido. Aguarde um pouco e tente de novo.");
                 }
-                throw new IaIndisponivelException("Não foi possível obter resposta da IA.");
+                throw new IaIndisponivelException("Não foi possível obter resposta da IA. Tente novamente em instantes.");
+            } catch (UnknownContentTypeException e) {
+                // CORREÇÃO: Quando o Gemini retorna uma resposta vazia com content-type octet-stream
+                if (tentativa < TENTATIVAS_EXTRAS) {
+                    log.warn("Gemini retornou uma resposta vazia (application/octet-stream). Tentando de novo...");
+                    esperar(tentativa);
+                    continue;
+                }
+                log.error("Gemini retornou uma resposta vazia após múltiplas tentativas.");
+                throw new IaIndisponivelException("A IA não retornou uma resposta válida. Tente novamente.");
             } catch (IaIndisponivelException e) {
                 throw e;
             } catch (Exception e) {
@@ -86,11 +94,20 @@ public class GeminiClienteIa implements ClienteIa {
         }
     }
 
+    private void esperar(int tentativa) {
+        try {
+            long millis = (long) (1000 * Math.pow(2, tentativa) + Math.random() * 500);
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private String chamar(String url, Map<String, Object> body) {
         Map response = restClient.post()
                 .uri(url)
-                .header("x-goog-api-key", apiKey) // chave no header, não na URL
+                .header("x-goog-api-key", apiKey)
                 .body(body)
                 .retrieve()
                 .body(Map.class);
@@ -100,7 +117,6 @@ public class GeminiClienteIa implements ClienteIa {
         }
 
         var candidates = (List<Map>) response.get("candidates");
-        // Sem candidatos: o Gemini bloqueou a resposta
         if (candidates == null || candidates.isEmpty()) {
             log.warn("Gemini não retornou candidatos. Resposta bloqueada ou inválida.");
             throw new IaIndisponivelException("A IA não conseguiu processar a solicitação. Tente novamente.");
