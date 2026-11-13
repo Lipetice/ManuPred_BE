@@ -12,7 +12,8 @@ import java.util.Collections;
 @Configuration
 public class GoogleAuthConfig {
 
-    @Value("${app.oauth2.redirect-uri}")
+    // CORREÇÃO: Voltou a apontar para o client-id correto
+    @Value("${app.google.web-client-id}")
     private String webClientId;
 
     @Bean

@@ -49,13 +49,11 @@ public class AuthController {
                             mediaType = "application/json",
                             schema = @Schema(implementation = LoginRequestDTO.class),
                             examples = {
+                                    // Admin criado automaticamente na primeira inicialização (DataInitializer).
+                                    // A senha real vem da variável ADMIN_PASSWORD; mantenha as duas iguais.
                                     @ExampleObject(
-                                            name = "Exemplo Admin",
-                                            value = "{\"email\":\"admin@teste.com\",\"password\":\"senha123\"}"
-                                    ),
-                                    @ExampleObject(
-                                            name = "Exemplo Usuário",
-                                            value = "{\"email\":\"carlos@teste.com\",\"password\":\"senha123\"}"
+                                            name = "Admin",
+                                            value = "{\"email\":\"admin@manupred.com\",\"password\":\"Admin@2026\"}"
                                     )
                             }
                     )
@@ -66,7 +64,7 @@ public class AuthController {
             }
     )
     @PostMapping("/login")
-    public ResponseEntity<TokenResponseDTO> login(@RequestBody LoginRequestDTO request) {
+    public ResponseEntity<TokenResponseDTO> login(@RequestBody @Valid LoginRequestDTO request) {
         return ResponseEntity.ok(authService.login(request));
     }
 

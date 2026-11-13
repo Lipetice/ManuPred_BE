@@ -3,15 +3,13 @@ package com.fiec.br.back_end.kipper.config;
 import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
-import com.google.firebase.remoteconfig.User;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
@@ -23,8 +21,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-@Getter
-@Setter
 @Component
 public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
@@ -61,17 +57,23 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                     "Google não retornou e-mail. Verifique o escopo 'email' no application.yml.");
         }
 
-        // Busca o usuário ou cria um novo
         Users user = userRepository.findByEmail(email)
                 .orElseGet(() -> createUserFromGoogle(email, name));
 
-        // Mesmas claims do login tradicional (+ foto)
         Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", user.getId());
         claims.put("name", user.getName());
         claims.put("pictureUrl", picture);
 
         String token = jwtService.generateToken(claims, user);
+
+        // A partir daqui quem autentica é o JWT. Se a sessão do login OAuth continuasse viva,
+        // o navegador mandaria o cookie JSESSIONID e o usuário logado seria um OAuth2User
+        // (e não um Users): os controllers quebrariam com ClassCastException (erro 500).
+        SecurityContextHolder.clearContext();
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
 
         String targetUrl = UriComponentsBuilder.fromUriString(redirectUri)
                 .queryParam("token", token)
@@ -82,12 +84,12 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
     }
 
     private Users createUserFromGoogle(String email, String name) {
-        Users user = new Users();
-        user.setName(name);
-        user.setEmail(email);
-        // Senha aleatória: quem entra pelo Google não usa senha local
-        user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
-        user.setRole(UserRole.USER_ROLE);
+        Users user = Users.builder()
+                .name(name != null ? name : "Usuário Google")
+                .email(email)
+                .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                .role(UserRole.USER_ROLE)
+                .build();
         return userRepository.save(user);
     }
 }

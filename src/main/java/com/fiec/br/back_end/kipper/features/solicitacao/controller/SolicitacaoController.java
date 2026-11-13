@@ -7,12 +7,12 @@ import com.fiec.br.back_end.kipper.features.solicitacao.service.SolicitacaoServi
 import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
 import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -49,6 +49,33 @@ public class SolicitacaoController {
                 || u.getRole() == UserRole.FUNCIONARIO_ROLE;
     }
 
+    /**
+     * Quem pode VER um chamado (dados, comentários e histórico): a equipe (funcionário,
+     * supervisor, admin), o solicitante, o técnico responsável e os ajudantes.
+     */
+    private void verificarAcesso(Users u, SolicitacaoResponseDTO r) {
+        boolean ehEquipe = isFuncionario(u);
+        boolean ehDono = u.getId().equals(r.usuarioSolicitanteId());
+        boolean ehTecnico = u.getId().equals(r.tecnicoResponsavelId());
+        boolean ehAjudante = r.ajudantes() != null && r.ajudantes().stream().anyMatch(a -> a.id().equals(u.getId()));
+
+        if (!ehEquipe && !ehDono && !ehTecnico && !ehAjudante) {
+            throw new AccessDeniedException("Sem permissão para acessar este chamado.");
+        }
+    }
+
+    private UUID converterUuid(String valor, String campo, boolean obrigatorio) {
+        if (valor == null || valor.isBlank()) {
+            if (obrigatorio) throw new IllegalArgumentException("O campo '" + campo + "' é obrigatório.");
+            return null;
+        }
+        try {
+            return UUID.fromString(valor.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("O campo '" + campo + "' não é um UUID válido: " + valor);
+        }
+    }
+
     @Operation(summary = "Criar chamado", description = "Cria um novo chamado. Preencha os campos de texto e, se quiser, anexe imagens.")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<SolicitacaoResponseDTO> create(
@@ -59,23 +86,29 @@ public class SolicitacaoController {
             @RequestParam(value = "numeroPatrimonio", required = false) String numeroPatrimonio,
             @RequestParam(value = "anexos", required = false) List<MultipartFile> anexos
     ) {
-        try {
-            CreateSolicitacaoRequestDTO dto = new CreateSolicitacaoRequestDTO(
-                    tipoId != null && !tipoId.isBlank() ? UUID.fromString(tipoId) : null,
-                    localId != null && !localId.isBlank() ? UUID.fromString(localId) : null,
-                    localizacaoProblema,
-                    descricao,
-                    numeroPatrimonio
-            );
-            Users u = getUsuarioLogado();
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(solicitacaoService.create(dto, u.getId(), anexos));
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Erro nos dados enviados: verifique se tipoId e localId são UUIDs válidos. Detalhe: " + e.getMessage());
+        // Como os campos chegam soltos (multipart), as anotações do DTO não são aplicadas
+        // automaticamente; por isso a validação é feita aqui.
+        if (localizacaoProblema == null || localizacaoProblema.isBlank()) {
+            throw new IllegalArgumentException("A localização do problema é obrigatória.");
         }
+        if (descricao == null || descricao.isBlank()) {
+            throw new IllegalArgumentException("A descrição é obrigatória.");
+        }
+
+        CreateSolicitacaoRequestDTO dto = new CreateSolicitacaoRequestDTO(
+                converterUuid(tipoId, "tipoId", true),
+                converterUuid(localId, "localId", false),
+                localizacaoProblema.trim(),
+                descricao.trim(),
+                numeroPatrimonio != null && !numeroPatrimonio.isBlank() ? numeroPatrimonio.trim() : null
+        );
+
+        Users u = getUsuarioLogado();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(solicitacaoService.create(dto, u.getId(), anexos));
     }
 
-    @Operation(summary = "Buscar chamados", description = "Busca paginada com filtros.")
+    @Operation(summary = "Buscar chamados", description = "Busca paginada com filtros. Por padrão, os mais recentes primeiro.")
     @GetMapping("/search")
     public ResponseEntity<Page<SolicitacaoResponseDTO>> search(
             @RequestParam(required = false) UUID id,
@@ -94,11 +127,11 @@ public class SolicitacaoController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataAberturaFim,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFinalizacaoInicio,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dataFinalizacaoFim,
-            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         Users u = getUsuarioLogado();
 
-        // Lógica de permissão mantida: se não for funcionário, só vê os próprios
+        // Se não for da equipe, só vê os próprios chamados
         List<UUID> solicitanteFiltro = isFuncionario(u) ? usuarioSolicitanteIds : List.of(u.getId());
 
         SolicitacaoSearchFilterDTO filtro = new SolicitacaoSearchFilterDTO(
@@ -113,22 +146,24 @@ public class SolicitacaoController {
     @Operation(summary = "Buscar por ID")
     @GetMapping("/{id}")
     public ResponseEntity<SolicitacaoResponseDTO> buscarPorId(@PathVariable UUID id) {
-        Users u = getUsuarioLogado();
         SolicitacaoResponseDTO r = solicitacaoService.buscarPorId(id);
-
-        boolean ehAdmin = isAdmin(u);
-        boolean ehFuncionario = isFuncionario(u);
-        boolean ehDono = u.getId().equals(r.usuarioSolicitanteId());
-        boolean ehTecnico = u.getId().equals(r.tecnicoResponsavelId());
-        boolean ehAjudante = r.ajudantes() != null && r.ajudantes().stream().anyMatch(a -> a.id().equals(u.getId()));
-
-        if (!ehAdmin && !ehFuncionario && !ehDono && !ehTecnico && !ehAjudante) {
-            throw new AccessDeniedException("Sem permissão para ver este chamado.");
-        }
+        verificarAcesso(getUsuarioLogado(), r);
         return ResponseEntity.ok(r);
     }
 
-    @Operation(summary = "Atualizar status")
+    @Operation(summary = "Excluir chamado",
+            description = "Apaga o chamado de vez, com comentários, histórico e anexos. "
+                    + "ADMIN exclui qualquer chamado; o solicitante só exclui o próprio enquanto estiver ABERTO.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deletar(@PathVariable UUID id) {
+        Users u = getUsuarioLogado();
+        solicitacaoService.deletar(id, u.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Atualizar status",
+            description = "Funcionário só altera chamados em que é técnico responsável ou ajudante. "
+                    + "FINALIZADA só pode ser definida aqui por ADMIN; o fluxo normal é o solicitante usar /validar.")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @PatchMapping("/{id}/status")
     public ResponseEntity<SolicitacaoResponseDTO> atualizarStatus(
@@ -185,7 +220,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.removerAjudante(id, ajudanteId, u.getId()));
     }
 
-    @Operation(summary = "Concluir chamado")
+    @Operation(summary = "Concluir chamado", description = "Técnico informa que terminou. Fica aguardando validação do solicitante.")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
     @PatchMapping("/{id}/concluir")
     public ResponseEntity<SolicitacaoResponseDTO> concluir(@PathVariable UUID id) {
@@ -193,7 +228,7 @@ public class SolicitacaoController {
         return ResponseEntity.ok(solicitacaoService.concluir(id, u.getId()));
     }
 
-    @Operation(summary = "Validar finalização")
+    @Operation(summary = "Validar finalização", description = "Solicitante (ou ADMIN) confirma um chamado que está CONCLUIDO.")
     @PatchMapping("/{id}/validar")
     public ResponseEntity<SolicitacaoResponseDTO> validar(@PathVariable UUID id) {
         Users u = getUsuarioLogado();
@@ -210,7 +245,7 @@ public class SolicitacaoController {
             @PathVariable UUID id, @RequestParam String motivo) {
         Users u = getUsuarioLogado();
         SolicitacaoResponseDTO r = solicitacaoService.buscarPorId(id);
-        if (!isAdmin(u) && !isSupervisor(u) && !u.getId().equals(r.usuarioSolicitanteId())) {
+        if (!isSupervisor(u) && !u.getId().equals(r.usuarioSolicitanteId())) {
             throw new AccessDeniedException("Sem permissão para rejeitar.");
         }
         return ResponseEntity.ok(solicitacaoService.rejeitar(id, motivo, u.getId()));
@@ -219,6 +254,8 @@ public class SolicitacaoController {
     @Operation(summary = "Listar comentários")
     @GetMapping("/{id}/comentarios")
     public ResponseEntity<List<ComentarioResponseDTO>> listarComentarios(@PathVariable UUID id) {
+        // Antes qualquer usuário logado lia os comentários de qualquer chamado só trocando o ID
+        verificarAcesso(getUsuarioLogado(), solicitacaoService.buscarPorId(id));
         return ResponseEntity.ok(solicitacaoService.listarComentarios(id));
     }
 
@@ -227,6 +264,7 @@ public class SolicitacaoController {
     public ResponseEntity<ComentarioResponseDTO> comentar(
             @PathVariable UUID id, @RequestBody @Valid ComentarioRequestDTO dto) {
         Users u = getUsuarioLogado();
+        verificarAcesso(u, solicitacaoService.buscarPorId(id));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(solicitacaoService.adicionarComentario(id, dto.texto(), u.getId()));
     }
@@ -234,10 +272,11 @@ public class SolicitacaoController {
     @Operation(summary = "Listar histórico/movimentações")
     @GetMapping("/{id}/historico")
     public ResponseEntity<List<MovimentacaoResponseDTO>> historico(@PathVariable UUID id) {
+        verificarAcesso(getUsuarioLogado(), solicitacaoService.buscarPorId(id));
         return ResponseEntity.ok(solicitacaoService.listarMovimentacoes(id));
     }
 
-    @Operation(summary = "Gerar relatórios", description = "Apenas ADMIN. Se início/fim forem omitidos, calcula sobre tudo.")
+    @Operation(summary = "Gerar relatórios", description = "Apenas ADMIN. Início e fim são opcionais (pode informar só um deles).")
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/relatorios")
     public ResponseEntity<RelatorioDTO> relatorio(

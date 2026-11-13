@@ -37,3 +37,13 @@ build/
 
 # Fotos dos chamados não vão pro repositório
 uploads/
+
+# Credenciais do Google (client secret baixado do Google Cloud)
+**/client_secret*.json
+**/*client-secret*.json
+
+# Variáveis de ambiente locais
+.env
+
+# Cópia do código gerada pelo Repomix
+repomix-output.xml

@@ -8,9 +8,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Component
 public class FileStorageService {
@@ -18,34 +20,57 @@ public class FileStorageService {
     @Value("${app.upload-dir:uploads}")
     private String uploadDir;
 
-    private static final List<String> CONTENT_TYPES_IMAGEM = List.of(
-            "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/bmp"
-    );
-
-    private static final List<String> CONTENT_TYPES_CSV = List.of(
-            "text/csv", "application/csv", "application/vnd.ms-excel", "text/plain"
+    private static final List<String> CONTENT_TYPES_PERMITIDOS = List.of(
+            // imagens
+            "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/bmp",
+            // csv
+            "text/csv", "application/csv", "application/vnd.ms-excel", "text/plain",
+            // alguns apps mobile mandam o arquivo sem tipo específico
+            "application/octet-stream"
     );
 
     private static final List<String> EXTENSOES_PERMITIDAS = List.of(
             ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".csv"
     );
 
+    /**
+     * Valida o arquivo sem salvar. Chamado antes de criar o chamado, para não sobrar
+     * um chamado gravado no banco quando o anexo é recusado.
+     */
+    public void validar(MultipartFile arquivo) {
+        String contentType = arquivo.getContentType() != null
+                ? arquivo.getContentType().toLowerCase(Locale.ROOT).split(";")[0].trim()
+                : "";
+        String nomeOriginal = arquivo.getOriginalFilename() != null
+                ? arquivo.getOriginalFilename().toLowerCase(Locale.ROOT)
+                : "";
+
+        // A extensão é OBRIGATÓRIA: é ela que define como o arquivo é servido em /uploads.
+        // Antes bastava o content-type bater (e "text/plain" estava na lista), então dava para
+        // subir um .html e ele seria aberto como página no endereço da API.
+        boolean extensaoValida = EXTENSOES_PERMITIDAS.stream().anyMatch(nomeOriginal::endsWith);
+        boolean contentTypeValido = contentType.isEmpty() || CONTENT_TYPES_PERMITIDOS.contains(contentType);
+
+        if (!extensaoValida || !contentTypeValido) {
+            throw new IllegalArgumentException(
+                    "Tipo de arquivo não permitido: " + arquivo.getOriginalFilename() +
+                            ". Só são aceitos imagens (jpg, jpeg, png, gif, webp, bmp) ou arquivos CSV."
+            );
+        }
+    }
+
     public String salvar(UUID solicitacaoId, MultipartFile arquivo) {
-        validarTipoArquivo(arquivo);
+        validar(arquivo);
 
         try {
             Path pastaSolicitacao = Path.of(uploadDir, solicitacaoId.toString()).toAbsolutePath().normalize();
             Files.createDirectories(pastaSolicitacao);
 
-            String nomeOriginal = arquivo.getOriginalFilename() != null ? arquivo.getOriginalFilename() : "arquivo";
-            // Descarta qualquer caminho embutido no nome enviado pelo cliente (ex: "../../etc/x.jpg"),
-            // mantendo só o nome do arquivo em si, para evitar escrever fora da pasta de uploads.
-            String nomeOriginalSanitizado = Path.of(nomeOriginal).getFileName().toString();
-            String nomeArmazenado = UUID.randomUUID() + "_" + nomeOriginalSanitizado;
+            String nomeArmazenado = UUID.randomUUID() + "_" + sanitizarNome(arquivo.getOriginalFilename());
             Path destino = pastaSolicitacao.resolve(nomeArmazenado).normalize();
 
             if (!destino.startsWith(pastaSolicitacao)) {
-                throw new IllegalArgumentException("Nome de arquivo inválido: " + nomeOriginal);
+                throw new IllegalArgumentException("Nome de arquivo inválido: " + arquivo.getOriginalFilename());
             }
 
             try (InputStream in = arquivo.getInputStream()) {
@@ -58,23 +83,44 @@ public class FileStorageService {
         }
     }
 
-    private void validarTipoArquivo(MultipartFile arquivo) {
-        String contentType = arquivo.getContentType() != null
-                ? arquivo.getContentType().toLowerCase(Locale.ROOT)
-                : "";
-        String nomeOriginal = arquivo.getOriginalFilename() != null
-                ? arquivo.getOriginalFilename().toLowerCase(Locale.ROOT)
-                : "";
+    /**
+     * Mantém só o nome do arquivo (sem pastas) e troca espaços, acentos e símbolos por "_".
+     * Assim o caminho nunca sai da pasta de uploads e a URL /uploads/... funciona sem precisar
+     * de encoding no front. O nome original continua guardado em Anexo.nomeArquivo para exibição.
+     */
+    private String sanitizarNome(String nomeOriginal) {
+        String nome = nomeOriginal != null ? nomeOriginal : "arquivo";
+        int ultimaBarra = Math.max(nome.lastIndexOf('/'), nome.lastIndexOf('\\'));
+        if (ultimaBarra >= 0) {
+            nome = nome.substring(ultimaBarra + 1);
+        }
+        nome = nome.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (nome.length() > 100) {
+            nome = nome.substring(nome.length() - 100); // preserva a extensão, que fica no fim
+        }
+        return nome.isBlank() ? "arquivo" : nome;
+    }
 
-        boolean contentTypeValido = CONTENT_TYPES_IMAGEM.contains(contentType)
-                || CONTENT_TYPES_CSV.contains(contentType);
-        boolean extensaoValida = EXTENSOES_PERMITIDAS.stream().anyMatch(nomeOriginal::endsWith);
+    /**
+     * Apaga a pasta de anexos de um chamado excluído. Se algum arquivo não puder ser apagado,
+     * a exclusão do chamado segue normalmente (o arquivo só fica sobrando no disco).
+     */
+    public void apagarArquivos(UUID solicitacaoId) {
+        Path raiz = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path pasta = raiz.resolve(solicitacaoId.toString()).normalize();
+        if (!pasta.startsWith(raiz) || !Files.isDirectory(pasta)) return;
 
-        if (!contentTypeValido && !extensaoValida) {
-            throw new IllegalArgumentException(
-                    "Tipo de arquivo não permitido: " + arquivo.getOriginalFilename() +
-                            ". Só são aceitos imagens (jpg, jpeg, png, gif, webp, bmp) ou arquivos CSV."
-            );
+        try (Stream<Path> arquivos = Files.walk(pasta)) {
+            // Ordem inversa: primeiro os arquivos, por último a própria pasta
+            arquivos.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {
+                    // segue apagando o resto
+                }
+            });
+        } catch (IOException ignored) {
+            // pasta inacessível: não impede a exclusão do chamado
         }
     }
 }

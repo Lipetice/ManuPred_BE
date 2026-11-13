@@ -19,6 +19,8 @@ public interface SolicitacaoService {
 
     SolicitacaoResponseDTO buscarPorId(UUID id);
 
+    void deletar(UUID id, UUID autorId);
+
     SolicitacaoResponseDTO atualizarStatus(UUID id, StatusSolicitacao novoStatus, String motivo, UUID autorId);
 
     SolicitacaoResponseDTO atualizarPrioridade(UUID id, PrioridadeSolicitacao novaPrioridade, UUID autorId);

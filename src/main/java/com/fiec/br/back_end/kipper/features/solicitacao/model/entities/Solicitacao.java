@@ -6,6 +6,7 @@ import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
 import com.fiec.br.back_end.kipper.model.entities.Auditoria;
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.DBRef;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
@@ -22,7 +23,11 @@ public class Solicitacao extends Auditoria {
 
     private String titulo;
     private String descricao;
+
+    // Índices: os filtros mais usados na busca e no SLA
+    @Indexed
     private StatusSolicitacao status;
+
     private PrioridadeSolicitacao prioridade;
 
     @DBRef
@@ -33,7 +38,15 @@ public class Solicitacao extends Auditoria {
 
     private String localizacaoProblema;
     private String numeroPatrimonio;
+
+    @Indexed
     private Boolean urgente;
+
+    /**
+     * Fica true quando o SLA do chamado estoura. Serve para o scheduler tratar cada chamado
+     * uma única vez (não aparece na resposta da API).
+     */
+    private Boolean slaEstourado;
 
     @DBRef
     private Users usuarioSolicitante;

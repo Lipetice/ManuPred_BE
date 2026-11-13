@@ -12,9 +12,17 @@ public interface SolicitacaoRepository extends MongoRepository<Solicitacao, UUID
     long countByStatus(StatusSolicitacao status);
 
     // Sintaxe de Query do MongoDB (JSON)
-    @Query("{ 'status': { $in: ?0 }, 'urgente': false }")
+    // Chamados ativos cujo SLA ainda não foi tratado ("$ne: true" também pega chamados antigos sem o campo)
+    @Query("{ 'status': { $in: ?0 }, 'slaEstourado': { $ne: true } }")
     List<Solicitacao> findAtivasParaSla(List<StatusSolicitacao> statuses);
 
     @Query("{ 'createdAt': { $gte: ?0, $lte: ?1 } }")
     List<Solicitacao> findByPeriodo(LocalDateTime inicio, LocalDateTime fim);
+
+    // Usados para impedir a exclusão de tipo/local que ainda tem chamados apontando para ele
+    @Query(value = "{ 'tipo.$id': ?0 }", exists = true)
+    boolean existsByTipoId(UUID tipoId);
+
+    @Query(value = "{ 'local.$id': ?0 }", exists = true)
+    boolean existsByLocalId(UUID localId);
 }

@@ -1,14 +1,18 @@
 package com.fiec.br.back_end.kipper.config;
 
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpStatus;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -37,14 +41,24 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
-                        // CORREÇÃO: Removido o POST /users daqui para exigir autenticação
                         .requestMatchers("/api/v1/users/auth/firebase").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/swagger-theme.css", "/swagger-filtro.js").permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers("/oauth2/**", "/login/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
+                        // Listagens públicas (o app e o site mostram antes do login)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/tipos").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/setores").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/locais").permitAll()
+                        // CORREÇÃO: status da IA pode ser checado sem login
+                        .requestMatchers(HttpMethod.GET, "/api/v1/ia/status").permitAll()
                         .anyRequest().authenticated()
                 )
+                .exceptionHandling(e -> e.defaultAuthenticationEntryPointFor(
+                        new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                        PathPatternRequestMatcher.withDefaults().matcher("/api/**")))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authenticationProvider(authenticationProvider)
                 .oauth2Login(oauth2 -> oauth2

@@ -64,7 +64,8 @@ public class AuthServiceImpl implements AuthService {
                 new UsernamePasswordAuthenticationToken(request.email(), request.password())
         );
 
-        Users user = userRepository.findByEmail(request.email()).orElseThrow();
+        Users user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new BadCredentialsException("E-mail ou senha inválidos."));
         String jwtToken = jwtUtil.generateToken(user);
 
         return new TokenResponseDTO(jwtToken);
@@ -91,6 +92,12 @@ public class AuthServiceImpl implements AuthService {
 
         if (email == null || email.isBlank()) {
             throw new BadCredentialsException("Token do Google não contém e-mail.");
+        }
+
+        // Como a conta é vinculada pelo e-mail, só aceita e-mail confirmado pelo Google.
+        // Sem isso, alguém poderia entrar na conta de outra pessoa usando um e-mail não verificado.
+        if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
+            throw new BadCredentialsException("O e-mail desta conta Google não foi verificado.");
         }
 
         Optional<Users> userOpt = userRepository.findByFirebaseUid(sub)

@@ -54,7 +54,7 @@ jobs:
           docker tag manupred_be ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest
           docker push ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest
 
-  # Job 3: Implantação no Kubernetes via Runner Self-Hosted
+  # Job 3: Implantação via Runner Self-Hosted
   deploy-k8s:
     runs-on: self-hosted
     needs: docker-build
@@ -71,10 +71,22 @@ jobs:
         continue-on-error: true
         run: docker rm manupred-be-app
 
+      # - O volume "manupred-uploads" guarda as fotos dos chamados. Sem ele, todo deploy
+      #   (que apaga e recria o container) apagava todos os anexos.
+      # - IA_API_KEY e GOOGLE_CLIENT_SECRET não eram repassados: em produção a IA ficava
+      #   sempre "indisponível" e o login Google pelo site falhava. Cadastre esses secrets
+      #   no repositório (se não existirem, ficam vazios e o resto funciona normalmente).
+      # - ADMIN_PASSWORD: senha do admin criado automaticamente (admin@manupred.com) quando
+      #   o banco ainda não tem nenhum ADMIN.
       - name: Rodar novo container
         run: |
           docker run -d --pull always --name manupred-be-app -p 8080:8080 \
-            -e MONGODB_URI=${{ secrets.MONGODB_URI }} \
-            -e JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            --restart unless-stopped \
+            -v manupred-uploads:/app/uploads \
+            -e MONGODB_URI='${{ secrets.MONGODB_URI }}' \
+            -e JWT_SECRET='${{ secrets.JWT_SECRET }}' \
             -e FIREBASE_CREDENTIALS_JSON='${{ secrets.FIREBASE_CREDENTIALS_JSON }}' \
+            -e IA_API_KEY='${{ secrets.IA_API_KEY }}' \
+            -e GOOGLE_CLIENT_SECRET='${{ secrets.GOOGLE_CLIENT_SECRET }}' \
+            -e ADMIN_PASSWORD='${{ secrets.ADMIN_PASSWORD }}' \
             ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest

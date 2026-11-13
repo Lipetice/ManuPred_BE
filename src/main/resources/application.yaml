@@ -1,28 +1,27 @@
 spring:
   application:
     name: kipper
-
+  # No Spring Boot 4 o endereço do banco fica em "spring.mongodb" (antes era "spring.data.mongodb").
   mongodb:
-    # AQUI ESTÁ A CONEXÃO DA NUVEM DA FIEC
-    uri: mongodb+srv://fillipesilva:Fiec2026@tigrinhos-fiec.xkgx0de.mongodb.net/kipper_db?retryWrites=true&w=majority
-    representation:
-      uuid: standard
+    # Lê do IntelliJ/Ambiente. Se não achar, usa o local.
+    uri: ${MONGODB_URI:mongodb://localhost:27017/kipper_db}
   data:
     mongodb:
       auto-index-creation: true
   servlet:
     multipart:
       enabled: true
+      # Cada foto pode ter até 10MB; o envio inteiro (várias fotos juntas) até 50MB
       max-file-size: 10MB
-      max-request-size: 10MB
+      max-request-size: 50MB
       resolve-lazily: false
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
+            client-id: ${GOOGLE_CLIENT_ID:99091544921-iob3icoi2ac6a8ts9j8i272voj5t3m7o.apps.googleusercontent.com}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
             scope:
               - openid
               - profile
@@ -30,6 +29,10 @@ spring:
 server:
   port: 8080
   shutdown: graceful
+  tomcat:
+    # Deixa o Tomcat terminar de receber um upload grande demais para conseguir devolver
+    # a mensagem de erro (com o padrão de 2MB a conexão simplesmente caía).
+    max-swallow-size: 100MB
 management:
   endpoints:
     web:
@@ -60,22 +63,33 @@ springdoc:
     try-it-out-enabled: true
     filter: true
     display-request-duration: true
-    default-models-expand-depth: 1
+    persist-authorization: true
+    doc-expansion: none
+    deep-linking: true
+    request-snippets-enabled: true
+    default-models-expand-depth: -1
     default-model-expand-depth: 1
   show-actuator: false
 app:
+  upload-dir: ${UPLOAD_DIR:uploads}
+  admin:
+    nome: ${ADMIN_NAME:Administrador}
+    email: ${ADMIN_EMAIL:admin@manupred.com}
+    password: ${ADMIN_PASSWORD:}
   jwt:
     secret: ${JWT_SECRET:TrocarPorUmaChaveAleatoriaDeProducaoComPeloMenos32Caracteres}
+    expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:30}
   firebase:
     credentials-json: ${FIREBASE_CREDENTIALS_JSON:}
-    generated-file-path: ${FIREBASE_CREDENTIALS_PATH:/tmp/firebase-service-account.json}
   google:
-    web-client-id: ${GOOGLE_WEB_CLIENT_ID:99091544921-i8suk0kothnd4jplm7q7p3galaoa8fae.apps.googleusercontent.com}
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
   oauth2:
     redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:5173/oauth2/redirect}
   ia:
     provedor: ${IA_PROVEDOR:gemini}
     api-key: ${IA_API_KEY:}
-    modelo: ${IA_MODELO:gemini-2.5-flash}
-    timeout-segundos: ${IA_TIMEOUT:20}
+    # CORREÇÃO: modelo estável e mais leve para evitar os erros 503 intermitentes
+    modelo: ${IA_MODELO:gemini-3.5-flash-lite}
+    # A primeira chamada ao Gemini às vezes demora; com 40s fica mais tolerante
+    timeout-segundos: ${IA_TIMEOUT:40}
     limite-por-minuto: ${IA_LIMITE_MINUTO:10}
