@@ -84,7 +84,7 @@ app:
   google:
     web-client-id: ${GOOGLE_WEB_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
   oauth2:
-    redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:5173/oauth2/redirect}
+    redirect-uri: ${FRONTEND_OAUTH2_REDIRECT_URI:http://localhost:5173/oauth2/redirect}
   ia:
     provedor: ${IA_PROVEDOR:gemini}
     api-key: ${IA_API_KEY:}
