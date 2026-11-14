@@ -6,6 +6,9 @@ import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.PrioridadeSo
 import com.fiec.br.back_end.kipper.features.solicitacao.model.enums.StatusSolicitacao;
 import com.fiec.br.back_end.kipper.features.solicitacao.repositories.MovimentacaoRepository;
 import com.fiec.br.back_end.kipper.features.solicitacao.repositories.SolicitacaoRepository;
+import com.fiec.br.back_end.kipper.features.user.model.entities.UserRole;
+import com.fiec.br.back_end.kipper.features.user.model.entities.Users;
+import com.fiec.br.back_end.kipper.features.user.repositories.UserRepository;
 import com.fiec.br.back_end.kipper.features.user.service.NotificacaoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +32,7 @@ public class SlaScheduler {
 
     private final SolicitacaoRepository solicitacaoRepository;
     private final MovimentacaoRepository movimentacaoRepository;
+    private final UserRepository userRepository;
     private final NotificacaoService notificacaoService;
 
     /** Roda a cada 15 minutos. */
@@ -70,9 +74,17 @@ public class SlaScheduler {
                     .solicitacao(s)
                     .build());
 
-            // Avisa o técnico responsável (se já tiver um)
-            notificacaoService.enviar(s.getTecnicoResponsavel(),
-                    "Chamado URGENTE: SLA estourado", s.getTitulo(), s.getId());
+            // Avisa o técnico responsável (se já tiver um) ou os supervisores (se estiver sem técnico)
+            if (s.getTecnicoResponsavel() != null) {
+                notificacaoService.enviar(s.getTecnicoResponsavel(),
+                        "Chamado URGENTE: SLA estourado", s.getTitulo(), s.getId());
+            } else {
+                List<Users> supervisores = userRepository.findByRoleIn(List.of(UserRole.SUPERVISOR_ROLE, UserRole.ADMIN_ROLE));
+                for (Users sup : supervisores) {
+                    notificacaoService.enviar(sup,
+                            "Chamado sem técnico URGENTE: SLA estourado", s.getTitulo(), s.getId());
+                }
+            }
 
             marcados++;
             log.warn("SLA estourado: chamado {} ({})", s.getId(), s.getTitulo());

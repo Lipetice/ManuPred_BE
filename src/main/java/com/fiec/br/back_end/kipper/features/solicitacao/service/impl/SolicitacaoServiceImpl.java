@@ -199,7 +199,18 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     public SolicitacaoResponseDTO atualizarStatus(UUID id, StatusSolicitacao novoStatus, String motivo, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
-        verificarPodeAtuar(autor, solicitacao);
+
+        if (autor.getRole() == UserRole.USER_ROLE) {
+            boolean ehDono = solicitacao.getUsuarioSolicitante() != null && solicitacao.getUsuarioSolicitante().getId().equals(autor.getId());
+            if (!ehDono) {
+                throw new AccessDeniedException("Você só pode cancelar seus próprios chamados.");
+            }
+            if (novoStatus != StatusSolicitacao.CANCELADO) {
+                throw new AccessDeniedException("Usuários só podem alterar o status de um chamado para CANCELADO.");
+            }
+        } else {
+            verificarPodeAtuar(autor, solicitacao);
+        }
 
         if (novoStatus == StatusSolicitacao.FINALIZADA && !isAdmin(autor)) {
             throw new AccessDeniedException("A finalização é feita pelo solicitante, ao validar o chamado.");
@@ -243,11 +254,12 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
                 solicitacao.setMotivoRejeicao(motivo);
                 solicitacao.setDataFinalizacao(agora);
             }
-            case CANCELADO -> { /* mantém as datas como estão */ }
+            case CANCELADO -> solicitacao.setDataFinalizacao(agora);
             default -> {
                 solicitacao.setDataConclusao(null);
                 solicitacao.setDataFinalizacao(null);
                 solicitacao.setMotivoRejeicao(null);
+                solicitacao.setSlaEstourado(false);
             }
         }
 
@@ -268,6 +280,9 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         }
         if (antigo != null && STATUS_FINAIS.contains(antigo) && !isAdmin(autor)) {
             throw new IllegalArgumentException("Este chamado já foi encerrado (" + antigo + "). Apenas um ADMIN pode reabri-lo.");
+        }
+        if (novo == StatusSolicitacao.CONCLUIDO && antigo == StatusSolicitacao.ABERTO) {
+            throw new IllegalArgumentException("O chamado precisa estar em andamento antes de ser concluído.");
         }
         if (novo == StatusSolicitacao.FINALIZADA && antigo != StatusSolicitacao.CONCLUIDO) {
             throw new IllegalArgumentException("Só é possível finalizar um chamado que está CONCLUIDO.");
@@ -335,7 +350,7 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
         Users ajudante = buscarUsuario(ajudanteId, "Ajudante não encontrado.");
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
 
-        verificarPodeAtuar(autor, solicitacao);
+        verificarPodeGerenciarAjudantes(autor, solicitacao);
         verificarChamadoEmAberto(solicitacao);
         if (!isEquipe(ajudante)) {
             throw new IllegalArgumentException(ajudante.getName() + " não é funcionário e não pode ser ajudante.");
@@ -361,7 +376,7 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
     public SolicitacaoResponseDTO removerAjudante(UUID id, UUID ajudanteId, UUID autorId) {
         Solicitacao solicitacao = buscarEntidadePorId(id);
         Users autor = buscarUsuario(autorId, "Usuário não encontrado.");
-        verificarPodeAtuar(autor, solicitacao);
+        verificarPodeGerenciarAjudantes(autor, solicitacao);
 
         if (solicitacao.getAjudantes() == null) return paraRespostaComAnexos(solicitacao);
 
@@ -468,6 +483,15 @@ public class SolicitacaoServiceImpl implements SolicitacaoService {
 
         if (autor.getRole() != UserRole.FUNCIONARIO_ROLE || (!ehTecnico && !ehAjudante)) {
             throw new AccessDeniedException("Você só pode alterar chamados em que é o técnico responsável ou ajudante.");
+        }
+    }
+
+    private void verificarPodeGerenciarAjudantes(Users autor, Solicitacao s) {
+        if (isSupervisorOuAdmin(autor)) return;
+
+        boolean ehTecnico = s.getTecnicoResponsavel() != null && s.getTecnicoResponsavel().getId().equals(autor.getId());
+        if (!ehTecnico) {
+            throw new AccessDeniedException("Apenas o supervisor ou o técnico responsável podem gerenciar ajudantes.");
         }
     }
 

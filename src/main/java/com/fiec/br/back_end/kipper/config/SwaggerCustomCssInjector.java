@@ -41,7 +41,7 @@ public class SwaggerCustomCssInjector extends SwaggerIndexPageTransformer {
 
         if (INDEX.equals(resource.getFilename())) {
             String html = ler(resource);
-            return new TransformedResource(resource, injetarNoHead(html).getBytes(StandardCharsets.UTF_8));
+            return new TransformedResource(resource, injetarNoHead(request, html).getBytes(StandardCharsets.UTF_8));
         }
 
         // Deixa o springdoc aplicar a configuração dele primeiro
@@ -54,10 +54,21 @@ public class SwaggerCustomCssInjector extends SwaggerIndexPageTransformer {
         return resultado;
     }
 
-    private String injetarNoHead(String html) {
-        // Caminhos absolutos: os arquivos ficam em src/main/resources/static
-        String tags = "<link rel=\"stylesheet\" type=\"text/css\" href=\"/swagger-theme.css\" />"
-                + "<script src=\"/swagger-filtro.js\"></script>";
+    private String injetarNoHead(HttpServletRequest request, String html) {
+        String prefix = request.getContextPath();
+        if (prefix == null || prefix.isBlank()) {
+            String forwarded = request.getHeader("X-Forwarded-Prefix");
+            if (forwarded != null && !forwarded.isBlank()) {
+                prefix = forwarded.trim();
+            } else {
+                prefix = "";
+            }
+        }
+        if (prefix.endsWith("/")) {
+            prefix = prefix.substring(0, prefix.length() - 1);
+        }
+        String tags = "<link rel=\"stylesheet\" type=\"text/css\" href=\"" + prefix + "/swagger-theme.css\" />"
+                + "<script src=\"" + prefix + "/swagger-filtro.js\"></script>";
         return html.replace("</head>", tags + "</head>");
     }
 

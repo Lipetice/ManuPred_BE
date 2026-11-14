@@ -29,6 +29,7 @@ spring:
 server:
   port: 8080
   shutdown: graceful
+  forward-headers-strategy: framework
   tomcat:
     # Deixa o Tomcat terminar de receber um upload grande demais para conseguir devolver
     # a mensagem de erro (com o padrão de 2MB a conexão simplesmente caía).
@@ -71,6 +72,8 @@ springdoc:
     default-model-expand-depth: 1
   show-actuator: false
 app:
+  swagger:
+    server-url: ${SWAGGER_SERVER_URL:/}
   upload-dir: ${UPLOAD_DIR:uploads}
   admin:
     nome: ${ADMIN_NAME:Administrador}

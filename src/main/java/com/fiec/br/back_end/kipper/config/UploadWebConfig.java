@@ -16,6 +16,9 @@ public class UploadWebConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         String caminhoAbsoluto = Path.of(uploadDir).toAbsolutePath().toUri().toString();
+        if (!caminhoAbsoluto.endsWith("/")) {
+            caminhoAbsoluto += "/";
+        }
         registry.addResourceHandler("/uploads/**")
                 .addResourceLocations(caminhoAbsoluto);
     }

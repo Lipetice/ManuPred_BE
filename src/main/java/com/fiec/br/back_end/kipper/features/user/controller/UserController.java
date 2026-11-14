@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -67,8 +68,8 @@ public class UserController {
         return ResponseEntity.ok(userService.findById(id));
     }
 
-    @Operation(summary = "Listar todos os usuários (ADMIN)")
-    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Listar todos os usuários (ADMIN e SUPERVISOR)")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
     @GetMapping
     public ResponseEntity<List<UserResponseDTO>> findAll() {
         return ResponseEntity.ok(userService.findAll());
@@ -94,17 +95,25 @@ public class UserController {
         return ResponseEntity.ok(userService.atualizarRole(id, dto.role()));
     }
 
+    private Users getUsuarioLogado() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Users u) {
+            return u;
+        }
+        throw new AccessDeniedException("Usuário não autenticado.");
+    }
+
     @Operation(summary = "Dados do usuário logado (id, email, nome, role)")
     @GetMapping("/me")
     public ResponseEntity<UserMeDTO> getMe() {
-        Users user = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Users user = getUsuarioLogado();
         return ResponseEntity.ok(new UserMeDTO(user.getId(), user.getEmail(), user.getName(), user.getRole()));
     }
 
     @Operation(summary = "Atualizar FCM Token do celular")
     @PatchMapping("/me/fcm-token")
     public ResponseEntity<Void> atualizarFcmToken(@RequestBody @Valid FcmTokenRequestDTO dto) {
-        Users user = (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Users user = getUsuarioLogado();
         userService.atualizarFcmToken(user.getEmail(), dto.fcmToken());
         return ResponseEntity.ok().build();
     }

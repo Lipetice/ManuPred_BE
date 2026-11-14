@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +24,11 @@ public class IaController {
     private final IaService iaService;
 
     private Users getUsuarioLogado() {
-        return (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Users u) {
+            return u;
+        }
+        throw new AccessDeniedException("Usuário não autenticado.");
     }
 
     // Liberado sem login (também está permitAll no SecurityConfig)

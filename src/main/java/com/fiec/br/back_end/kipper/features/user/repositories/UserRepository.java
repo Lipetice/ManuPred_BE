@@ -17,4 +17,6 @@ public interface UserRepository extends MongoRepository<Users, UUID> {
     List<Users> findAllByFcmToken(String fcmToken);
     List<Users> findByNameContainingIgnoreCase(String nome);
     boolean existsByRole(UserRole role);
+    List<Users> findByRole(UserRole role);
+    List<Users> findByRoleIn(List<UserRole> roles);
 }

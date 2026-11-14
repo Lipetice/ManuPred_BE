@@ -86,8 +86,8 @@ import org.springframework.context.annotation.Configuration;
                 )
         ),
         servers = {
-                // "/" faz o Swagger usar a mesma origem (IP/host e porta) de onde a página foi aberta
-                @Server(url = "/", description = "Servidor atual")
+                // Permite configurar a URL base (ex: /kipper no API Gateway) ou manter "/" por padrão
+                @Server(url = "${app.swagger.server-url:/}", description = "Servidor atual")
         },
         security = @SecurityRequirement(name = "bearerAuth")
 )

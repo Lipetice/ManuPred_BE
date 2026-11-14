@@ -21,6 +21,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.fiec.br.back_end.kipper.features.solicitacao.repositories.SolicitacaoRepository;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,6 +31,7 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final SolicitacaoRepository solicitacaoRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final AuditService auditService;
@@ -79,6 +81,11 @@ public class UserServiceImpl implements UserService {
         Users autor = getUsuarioLogado();
         if (autor != null && autor.getId().equals(id)) {
             throw new IllegalArgumentException("Você não pode deletar a própria conta.");
+        }
+
+        if (solicitacaoRepository.existsByUsuarioSolicitanteAtivo(id)
+                || solicitacaoRepository.existsByTecnicoResponsavelAtivo(id)) {
+            throw new IllegalArgumentException("Não é possível deletar o usuário: ele possui chamados em andamento como solicitante ou técnico responsável.");
         }
 
         userRepository.deleteById(id);

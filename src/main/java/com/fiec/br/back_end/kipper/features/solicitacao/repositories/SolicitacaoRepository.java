@@ -25,4 +25,10 @@ public interface SolicitacaoRepository extends MongoRepository<Solicitacao, UUID
 
     @Query(value = "{ 'local.$id': ?0 }", exists = true)
     boolean existsByLocalId(UUID localId);
+
+    @Query(value = "{ 'usuarioSolicitante.$id': ?0, 'status': { $nin: ['FINALIZADA', 'REJEITADA', 'CANCELADO'] } }", exists = true)
+    boolean existsByUsuarioSolicitanteAtivo(UUID usuarioId);
+
+    @Query(value = "{ 'tecnicoResponsavel.$id': ?0, 'status': { $nin: ['FINALIZADA', 'REJEITADA', 'CANCELADO'] } }", exists = true)
+    boolean existsByTecnicoResponsavelAtivo(UUID tecnicoId);
 }

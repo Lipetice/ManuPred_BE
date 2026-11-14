@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Schema(description = "Dados de um chamado retornado pela API")
@@ -114,7 +115,7 @@ public record SolicitacaoResponseDTO(
                 s.getUsuarioSolicitante() != null ? s.getUsuarioSolicitante().getName() : null,
                 s.getTecnicoResponsavel() != null ? s.getTecnicoResponsavel().getId() : null,
                 s.getTecnicoResponsavel() != null ? s.getTecnicoResponsavel().getName() : null,
-                s.getAjudantes() != null ? s.getAjudantes().stream().map(AjudanteDTO::fromEntity).toList() : List.of(),
+                s.getAjudantes() != null ? s.getAjudantes().stream().filter(Objects::nonNull).map(AjudanteDTO::fromEntity).toList() : List.of(),
                 s.getCreatedAt(),
                 s.getUpdatedAt(),
                 s.getDataConclusao(),

@@ -276,6 +276,11 @@ public class IaServiceImpl implements IaService {
     private <T> T parseJsonSeguro(String json, Class<T> classe) {
         try {
             String limpo = json.replaceAll("```json", "").replaceAll("```", "").trim();
+            int inicio = limpo.indexOf('{');
+            int fim = limpo.lastIndexOf('}');
+            if (inicio >= 0 && fim > inicio) {
+                limpo = limpo.substring(inicio, fim + 1);
+            }
             return objectMapper.readValue(limpo, classe);
         } catch (Exception e) {
             log.error("Erro ao fazer parse do JSON da IA: {}", json);

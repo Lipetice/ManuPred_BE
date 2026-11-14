@@ -83,10 +83,12 @@ jobs:
           docker run -d --pull always --name manupred-be-app -p 8080:8080 \
             --restart unless-stopped \
             -v manupred-uploads:/app/uploads \
+            -e SPRING_PROFILES_ACTIVE=prod \
             -e MONGODB_URI='${{ secrets.MONGODB_URI }}' \
             -e JWT_SECRET='${{ secrets.JWT_SECRET }}' \
             -e FIREBASE_CREDENTIALS_JSON='${{ secrets.FIREBASE_CREDENTIALS_JSON }}' \
             -e IA_API_KEY='${{ secrets.IA_API_KEY }}' \
             -e GOOGLE_CLIENT_SECRET='${{ secrets.GOOGLE_CLIENT_SECRET }}' \
             -e ADMIN_PASSWORD='${{ secrets.ADMIN_PASSWORD }}' \
+            -e FRONTEND_OAUTH2_REDIRECT_URI='${{ secrets.FRONTEND_OAUTH2_REDIRECT_URI }}' \
             ${{ secrets.DOCKER_USERNAME }}/manupred_be:latest

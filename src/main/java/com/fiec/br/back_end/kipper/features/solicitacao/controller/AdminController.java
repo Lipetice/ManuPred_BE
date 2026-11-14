@@ -21,6 +21,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -42,7 +43,11 @@ public class AdminController {
     private final AuditService auditService;
 
     private Users getUsuarioLogado() {
-        return (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Users u) {
+            return u;
+        }
+        throw new AccessDeniedException("Usuário não autenticado.");
     }
 
     // ============ TIPOS DE CHAMADO ============

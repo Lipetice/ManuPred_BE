@@ -37,7 +37,11 @@ public class SolicitacaoController {
     private final SolicitacaoService solicitacaoService;
 
     private Users getUsuarioLogado() {
-        return (Users) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Users u) {
+            return u;
+        }
+        throw new AccessDeniedException("Usuário não autenticado.");
     }
 
     private boolean isAdmin(Users u) { return u.getRole() == UserRole.ADMIN_ROLE; }
@@ -57,7 +61,9 @@ public class SolicitacaoController {
         boolean ehEquipe = isFuncionario(u);
         boolean ehDono = u.getId().equals(r.usuarioSolicitanteId());
         boolean ehTecnico = u.getId().equals(r.tecnicoResponsavelId());
-        boolean ehAjudante = r.ajudantes() != null && r.ajudantes().stream().anyMatch(a -> a.id().equals(u.getId()));
+        boolean ehAjudante = r.ajudantes() != null && r.ajudantes().stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(a -> a.id() != null && a.id().equals(u.getId()));
 
         if (!ehEquipe && !ehDono && !ehTecnico && !ehAjudante) {
             throw new AccessDeniedException("Sem permissão para acessar este chamado.");
@@ -164,7 +170,7 @@ public class SolicitacaoController {
     @Operation(summary = "Atualizar status",
             description = "Funcionário só altera chamados em que é técnico responsável ou ajudante. "
                     + "FINALIZADA só pode ser definida aqui por ADMIN; o fluxo normal é o solicitante usar /validar.")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','FUNCIONARIO','USER')")
     @PatchMapping("/{id}/status")
     public ResponseEntity<SolicitacaoResponseDTO> atualizarStatus(
             @PathVariable UUID id,
