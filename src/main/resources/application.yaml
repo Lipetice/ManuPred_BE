@@ -74,7 +74,16 @@ springdoc:
 app:
   swagger:
     server-url: ${SWAGGER_SERVER_URL:/}
+  # Pasta dos anexos quando o armazenamento é local
   upload-dir: ${UPLOAD_DIR:uploads}
+  storage:
+    # auto (padrão): usa o S3 se as chaves da AWS estiverem configuradas; senão, a pasta local.
+    # Também aceita "s3" ou "local" para forçar.
+    tipo: ${STORAGE_TIPO:auto}
+    s3:
+      bucket: ${S3_BUCKET:fiec-tcc-kipper}
+      # "Pasta" dentro do bucket onde os anexos ficam
+      prefixo: ${S3_PREFIXO:anexos/}
   admin:
     nome: ${ADMIN_NAME:Administrador}
     email: ${ADMIN_EMAIL:admin@manupred.com}
@@ -96,3 +105,12 @@ app:
     # A primeira chamada ao Gemini às vezes demora; com 40s fica mais tolerante
     timeout-segundos: ${IA_TIMEOUT:40}
     limite-por-minuto: ${IA_LIMITE_MINUTO:10}
+cloud:
+  aws:
+    region:
+      static: ${AWS_REGION:us-east-1}
+    credentials:
+      # O ":" no final deixa o valor vazio quando a variável não existe. Sem ele, o back não
+      # sobe em quem não tem as chaves configuradas (aí os anexos ficam na pasta local).
+      access-key: ${AWS_ACCESS_KEY_ID:}
+      secret-key: ${AWS_SECRET_ACCESS_KEY:}

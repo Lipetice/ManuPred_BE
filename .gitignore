@@ -47,3 +47,8 @@ uploads/
 
 # Cópia do código gerada pelo Repomix
 repomix-output.xml
+
+# Chaves de acesso da AWS (nunca commitar)
+**/chaves_acesso*.csv
+**/*accessKeys*.csv
+**/*credentials*.csv

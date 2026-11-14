@@ -96,6 +96,28 @@
             <artifactId>google-api-client</artifactId>
             <version>2.7.2</version>
         </dependency>
+        <!-- AWS: integração com a nuvem (orientação do professor) -->
+        <!-- https://mvnrepository.com/artifact/software.amazon.awssdk/aws-sdk-java -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>aws-sdk-java</artifactId>
+            <version>2.35.11</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Amazon S3: guarda os anexos dos chamados -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.35.11</version>
+            <exclusions>
+                <!-- Cliente HTTP assíncrono (Netty) não é usado; evita conflito de versão com o Netty do projeto -->
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
     <build>
         <plugins>

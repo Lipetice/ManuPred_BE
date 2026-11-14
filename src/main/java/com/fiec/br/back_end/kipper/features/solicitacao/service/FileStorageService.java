@@ -1,24 +1,31 @@
 package com.fiec.br.back_end.kipper.features.solicitacao.service;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.fiec.br.back_end.kipper.features.solicitacao.service.armazenamento.ArmazenamentoArquivos;
+import com.fiec.br.back_end.kipper.features.solicitacao.service.armazenamento.ArquivoArmazenado;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Stream;
 
+/**
+ * Valida e guarda os anexos dos chamados. Onde eles ficam (pasta local ou Amazon S3) é decidido
+ * pelo ArmazenamentoArquivos configurado (ver ArmazenamentoConfig).
+ */
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class FileStorageService {
 
-    @Value("${app.upload-dir:uploads}")
-    private String uploadDir;
+    private final ArmazenamentoArquivos armazenamento;
 
     private static final List<String> CONTENT_TYPES_PERMITIDOS = List.of(
             // imagens
@@ -45,9 +52,7 @@ public class FileStorageService {
                 ? arquivo.getOriginalFilename().toLowerCase(Locale.ROOT)
                 : "";
 
-        // A extensão é OBRIGATÓRIA: é ela que define como o arquivo é servido em /uploads.
-        // Antes bastava o content-type bater (e "text/plain" estava na lista), então dava para
-        // subir um .html e ele seria aberto como página no endereço da API.
+        // A extensão é OBRIGATÓRIA: é ela que define como o arquivo é entregue em /uploads.
         boolean extensaoValida = EXTENSOES_PERMITIDAS.stream().anyMatch(nomeOriginal::endsWith);
         boolean contentTypeValido = contentType.isEmpty() || CONTENT_TYPES_PERMITIDOS.contains(contentType);
 
@@ -59,34 +64,59 @@ public class FileStorageService {
         }
     }
 
+    /**
+     * Guarda o anexo e devolve o caminho relativo ({idDoChamado}/{nome}), que é gravado em
+     * Anexo.caminhoArmazenado. O formato é o mesmo de antes, então os anexos antigos continuam válidos.
+     */
     public String salvar(UUID solicitacaoId, MultipartFile arquivo) {
         validar(arquivo);
 
-        try {
-            Path pastaSolicitacao = Path.of(uploadDir, solicitacaoId.toString()).toAbsolutePath().normalize();
-            Files.createDirectories(pastaSolicitacao);
+        String nomeArmazenado = UUID.randomUUID() + "_" + sanitizarNome(arquivo.getOriginalFilename());
+        String caminho = solicitacaoId + "/" + nomeArmazenado;
 
-            String nomeArmazenado = UUID.randomUUID() + "_" + sanitizarNome(arquivo.getOriginalFilename());
-            Path destino = pastaSolicitacao.resolve(nomeArmazenado).normalize();
-
-            if (!destino.startsWith(pastaSolicitacao)) {
-                throw new IllegalArgumentException("Nome de arquivo inválido: " + arquivo.getOriginalFilename());
-            }
-
-            try (InputStream in = arquivo.getInputStream()) {
-                Files.copy(in, destino);
-            }
-
-            return solicitacaoId + "/" + nomeArmazenado;
-        } catch (IOException e) {
+        try (InputStream in = arquivo.getInputStream()) {
+            armazenamento.gravar(caminho, in, arquivo.getSize(), tipoDoArquivo(nomeArmazenado).toString());
+        } catch (IOException | RuntimeException e) {
+            log.error("Falha ao salvar o anexo {}: {}", caminho, e.getMessage());
             throw new RuntimeException("Falha ao salvar anexo: " + e.getMessage(), e);
+        }
+        return caminho;
+    }
+
+    /** Abre um anexo pelo caminho relativo. Vazio se não existir. */
+    public Optional<ArquivoArmazenado> abrir(String caminho) {
+        try {
+            return armazenamento.abrir(caminho);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        } catch (IOException e) {
+            throw new RuntimeException("Falha ao ler anexo: " + e.getMessage(), e);
         }
     }
 
     /**
+     * Apaga os anexos de um chamado excluído. Se algum arquivo não puder ser apagado,
+     * a exclusão do chamado segue normalmente (o arquivo só fica sobrando no armazenamento).
+     */
+    public void apagarArquivos(UUID solicitacaoId) {
+        try {
+            armazenamento.apagarPasta(solicitacaoId.toString());
+        } catch (RuntimeException e) {
+            log.warn("Não foi possível apagar os anexos do chamado {}: {}", solicitacaoId, e.getMessage());
+        }
+    }
+
+    /** Tipo do arquivo pela extensão (não confia no que o cliente mandou). */
+    public static MediaType tipoDoArquivo(String nome) {
+        if (nome != null && nome.toLowerCase(Locale.ROOT).endsWith(".csv")) {
+            return MediaType.parseMediaType("text/csv");
+        }
+        return MediaTypeFactory.getMediaType(nome).orElse(MediaType.APPLICATION_OCTET_STREAM);
+    }
+
+    /**
      * Mantém só o nome do arquivo (sem pastas) e troca espaços, acentos e símbolos por "_".
-     * Assim o caminho nunca sai da pasta de uploads e a URL /uploads/... funciona sem precisar
-     * de encoding no front. O nome original continua guardado em Anexo.nomeArquivo para exibição.
+     * O nome original continua guardado em Anexo.nomeArquivo para exibição.
      */
     private String sanitizarNome(String nomeOriginal) {
         String nome = nomeOriginal != null ? nomeOriginal : "arquivo";
@@ -99,28 +129,5 @@ public class FileStorageService {
             nome = nome.substring(nome.length() - 100); // preserva a extensão, que fica no fim
         }
         return nome.isBlank() ? "arquivo" : nome;
-    }
-
-    /**
-     * Apaga a pasta de anexos de um chamado excluído. Se algum arquivo não puder ser apagado,
-     * a exclusão do chamado segue normalmente (o arquivo só fica sobrando no disco).
-     */
-    public void apagarArquivos(UUID solicitacaoId) {
-        Path raiz = Path.of(uploadDir).toAbsolutePath().normalize();
-        Path pasta = raiz.resolve(solicitacaoId.toString()).normalize();
-        if (!pasta.startsWith(raiz) || !Files.isDirectory(pasta)) return;
-
-        try (Stream<Path> arquivos = Files.walk(pasta)) {
-            // Ordem inversa: primeiro os arquivos, por último a própria pasta
-            arquivos.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // segue apagando o resto
-                }
-            });
-        } catch (IOException ignored) {
-            // pasta inacessível: não impede a exclusão do chamado
-        }
     }
 }
