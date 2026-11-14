@@ -20,7 +20,7 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:99091544921-iob3icoi2ac6a8ts9j8i272voj5t3m7o.apps.googleusercontent.com}
+            client-id: ${GOOGLE_CLIENT_ID:355480871385-8q4850tqh2shrf6qkf5li497lgf9m42m.apps.googleusercontent.com}
             client-secret: ${GOOGLE_CLIENT_SECRET:}
             scope:
               - openid
